@@ -1,23 +1,20 @@
-# Sidfind
+# SidFind
 
 Finds which [HVSC](https://hvsc.c64.org/) tune is used in a C64 `.prg` file (a demo, intro, game, ...).
-It is a cross-platform alternative to Wilfried Bos excellent [SID Known](https://csdb.dk/release/?id=262621).
+It is a cross-platform alternative to Wilfred Bos's excellent [SID Known](https://csdb.dk/release/?id=262621).
 
 ## Motivation for this project
-> Wilfried Bos' excellent SID known is available for Windows only and closed source. Unfortunately.
-> 
-> Apple is going to kill Rosetta 2 within the next releases, and  I will most likely not be able to run 
-> sidknown through Wine on my system anymore.
-> Since I didn't want to spin up a VM just for using sidknown, I gave AI a try and vibe coded 
+
+SID Known by Wilfred Bos is excellent, but it is available for Windows only and is closed source.
+
+Apple is phasing out Rosetta 2, so I will most likely not be able to run SID Known through Wine on my Mac
+for much longer. I did not want to set up a virtual machine just to use it, so I gave AI a try and vibe coded
 this program for my personal use.
-> 
 
 ## Important note
-> **Vibe coded.**
-> 
-> It comes with <b>no warranty of any kind</b>, and everyone uses it
-> at their own risk. See [Disclaimer](#disclaimer) and [License](#license).
 
+**Vibe coded.** It comes with **no warranty of any kind**, and everyone uses it at their own risk.
+See [Disclaimer](#disclaimer) and [License](#license).
 
 ## Download
 
@@ -25,16 +22,16 @@ Prebuilt binaries are attached to each [release](../../releases) (no Rust needed
 
 | Platform | File |
 |---|---|
-| Windows (64-bit) | `SidFind-<version>-x86_64-pc-windows-msvc.zip` |
-| Linux (64-bit Intel/AMD) | `SidFind-<version>-x86_64-unknown-linux-gnu.tar.gz` |
-| Linux (64-bit ARM) | `SidFind-<version>-aarch64-unknown-linux-gnu.tar.gz` |
-| macOS (Apple silicon) | `SidFind-<version>-aarch64-apple-darwin.tar.gz` |
-| macOS (Intel) | `SidFind-<version>-x86_64-apple-darwin.tar.gz` |
+| Windows (64-bit) | `sidfind-<version>-x86_64-pc-windows-msvc.zip` |
+| Linux (64-bit Intel/AMD) | `sidfind-<version>-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux (64-bit ARM) | `sidfind-<version>-aarch64-unknown-linux-gnu.tar.gz` |
+| macOS (Apple silicon) | `sidfind-<version>-aarch64-apple-darwin.tar.gz` |
+| macOS (Intel) | `sidfind-<version>-x86_64-apple-darwin.tar.gz` |
 
-Each archive contains the `SidFind` program, this README and the license. `SHA256SUMS.txt` lets you verify the downloads.
+Each archive contains the `sidfind` program, this README and the license. `SHA256SUMS.txt` lets you verify the downloads.
 SidFind is a command line tool: unpack it and run it from a terminal (see [Usage](#usage)).
 
-The binaries are not code-signed, so your OS may warn about them: on macOS run `xattr -d com.apple.quarantine SidFind`
+The binaries are not code-signed, so your OS may warn about them: on macOS run `xattr -d com.apple.quarantine sidfind`
 once if a browser-downloaded copy is blocked, and on Windows choose "More info" and then "Run anyway" in SmartScreen.
 Or build it yourself, as described below.
 
@@ -134,7 +131,7 @@ All platforms: install `rustup` from <https://rustup.rs>, then check with `rustc
 
 ```sh
 git clone <this repository>
-cd SidFind
+cd sidfind
 cargo build --release
 ```
 
@@ -142,8 +139,8 @@ The binary is written to:
 
 | OS | Path |
 |---|---|
-| macOS, Linux | `target/release/SidFind` |
-| Windows | `target\release\SidFind.exe` |
+| macOS, Linux | `target/release/sidfind` |
+| Windows | `target\release\sidfind.exe` |
 
 Copy it anywhere on your `PATH`, or run `cargo install --path .` to install it into `~/.cargo/bin`
 (`%USERPROFILE%\.cargo\bin` on Windows).
