@@ -1,0 +1,20 @@
+# Rust build output
+/target/
+
+# Precomputed HVSC indexes (up to ~170 MB, user-generated, see README)
+*.idx
+
+# Never commit the HVSC collection or SID files
+*.sid
+
+# Local example PRGs (third-party demos, see below)
+/examples/
+
+# Editors / IDEs
+/.idea/
+/.vscode/
+*.iml
+
+# OS junk
+.DS_Store
+Thumbs.db
