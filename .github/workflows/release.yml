@@ -100,7 +100,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
         run: |
-          flags=""
-          case "${TAG}" in *-*) flags="--prerelease" ;; esac
-          gh release create "${TAG}" dist/* --title "${TAG}" --generate-notes ${flags}
+          # A release may already exist, e.g. one created by hand in the web UI. Attach the
+          # files to it instead of failing.
+          if gh release view "${TAG}" --repo "${REPO}" > /dev/null 2>&1; then
+            gh release upload "${TAG}" dist/* --clobber --repo "${REPO}"
+          else
+            flags=""
+            case "${TAG}" in *-*) flags="--prerelease" ;; esac
+            gh release create "${TAG}" dist/* --title "${TAG}" --generate-notes ${flags} --repo "${REPO}"
+          fi
