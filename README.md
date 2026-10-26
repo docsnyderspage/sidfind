@@ -15,6 +15,7 @@ this program for my personal use.
 
 **Vibe coded.** It comes with **no warranty of any kind**, and everyone uses it at their own risk.
 See [Disclaimer](#disclaimer) and [License](#license).
+SID Known is quite more sophisticated than this little project - so if you're on Windows, stick to SID Known instead.
 
 ## Download
 
@@ -161,12 +162,10 @@ The `cross` tool (<https://github.com/cross-rs/cross>) or a CI matrix on GitHub 
 > Note: the unit tests run automatically on Linux, macOS and Windows (see `.github/workflows/`). The author develops and
 > tries SidFind on real HVSC data on macOS only, so Linux and Windows have had less hands-on use.
 
-
-
 ## How it works
 
-1. The PRG is loaded into a small 6510 emulator (official opcodes only) with 64 KiB of RAM. It starts at the BASIC
-   `SYS` target and runs for the cycle budget, or until it hits an idle loop, an unsupported opcode, or a jump into
+1. The PRG is loaded into a small 6510 emulator (the official opcodes and the stable illegal ones) with 64 KiB of RAM.
+   It starts at the BASIC `SYS` target and runs for the cycle budget, or until it hits an idle loop, an unsupported opcode, or a jump into
    ROM. This lets decrunchers unpack the tune. There is no ROM, no interrupt, and no VIC, CIA or SID emulation.
 2. Memory is snapshotted every 250,000 cycles and every changed page is kept, because a demo may unpack a tune, use
    it, and later overwrite it.
@@ -181,13 +180,33 @@ The `cross` tool (<https://github.com/cross-rs/cross>) or a CI matrix on GitHub 
 
 ## Limitations
 
-- Only official 6502 opcodes and binary-mode arithmetic are emulated. A packer using illegal opcodes stops early (the
-  output names the opcode).
+- Only binary-mode arithmetic is emulated, and of the illegal opcodes only the stable ones (LAX, SAX, SLO, RLA, SRE,
+  RRA, DCP, ISC, ANC, ALR, ARR, LXA, SBX, the extra SBC and the NOP variants). A packer using an unstable one (XAA, LAS,
+  SHA, SHX, TAS) or a JAM opcode stops early (the output names the opcode). The matcher that finds relocated code still
+  treats illegal opcodes as data, so relocated code that uses them is matched on its unmoved bytes only.
 - Relocation is handled for absolute-address operands only. Data tables that hold addresses (pointer tables) and
   tunes that the PRG rewrites in other ways can still be ranked weakly. A tune that is only generated after the first
   interrupt can be missed, since interrupts are not emulated. SID Known's approach of hashing the emulated SID register writes can catch such cases; this tool
   does not do that.
 - Tunes that are not in HVSC cannot be identified.
+
+## Changelog
+
+### 0.1.3 (2026-10-27)
+
+- The emulator now runs the stable illegal 6502 opcodes (LAX, SAX, SLO, RLA, SRE, RRA, DCP, ISC, ANC, ALR, ARR, LXA,
+  SBX, the extra SBC at `$eb`, and the NOP variants). Packers and players that use them used to stop the emulation
+  early, so their tune was never unpacked. The unstable opcodes (XAA, LAS, SHA, SHX, TAS) and JAM still stop it.
+- A PRG that was saved with load address `$0800` (a BASIC program with its leading zero byte) is now started at its
+  `SYS` target, like one at `$0801`. It used to start at the load address and stop on the first byte.
+- Tested against 638 intro PRGs whose tune is known: the expected tune is among the top 3 candidates for 98.7% of them
+  (630 of 638), up from 97.8% (624) with 0.1.2, using an index with the default settings. The result of each PRG is in
+  `2026-10-26_11-12-05_test-results.txt`.
+- No change to the index format or to the fingerprints: an index built with 0.1.2 keeps working.
+
+### 0.1.2
+
+- initial release.
 
 ## Releasing (maintainers)
 
@@ -206,8 +225,10 @@ The release workflow tests and builds all platforms and creates the GitHub relea
 
 ## Disclaimer
 
-This program was vibe coded by Doc Snyder for personal use. It has not been audited or formally tested beyond a handful of example
-PRGs, so results can be wrong: always check a match manually.
+This program was vibe coded by Doc Snyder for personal use. It has not been audited. It has been tried on a set of
+~600 C64 intro PRGs with known tunes (see the [changelog](#changelog)), where the right tune was among the
+top 3 candidates for 98.7% of them.
+Results can be wrong: always check a match manually.
 
 **Everyone uses this program at their own risk. The author takes no responsibility whatsoever for any issues, damage,
 loss or other consequences that may result from using it.**

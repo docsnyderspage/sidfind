@@ -1,4 +1,4 @@
-//! A minimal C64 "machine": a 6510 CPU (official opcodes, binary-mode arithmetic only) over
+//! A minimal C64 "machine": a 6510 CPU (official and stable illegal opcodes, binary-mode arithmetic only) over
 //! 64 KiB of RAM with just enough I/O behaviour for decrunchers to run to completion.
 //!
 //! There is no ROM (calls into it just return), no interrupts, and no VIC/CIA/SID emulation. The goal is not to run a
@@ -79,7 +79,8 @@ impl Machine {
         m.ram[load as usize..end].copy_from_slice(&data[..end - load as usize]);
         m.ram[0] = 0x2f;
         m.ram[1] = 0x37;
-        if load == 0x0801 {
+        // some tools load a BASIC program at $0800: its first byte is the 0 before the first line
+        if load == 0x0801 || load == 0x0800 {
             if let Some(target) = sys_target(&m.ram[0x0801..]) {
                 m.pc = target;
             }
@@ -347,7 +348,7 @@ impl Machine {
             0xca => self.x = self.set_nz(self.x.wrapping_sub(1)),
             0xd8 => self.set_flag(D, false),
             0xe8 => self.x = self.set_nz(self.x.wrapping_add(1)),
-            0xea => {}
+            0xea | 0x1a | 0x3a | 0x5a | 0x7a | 0xda | 0xfa => {}
             0xf8 => self.set_flag(D, true),
             0x10 => self.branch(!self.flag(N)),
             0x30 => self.branch(self.flag(N)),
@@ -357,8 +358,123 @@ impl Machine {
             0xb0 => self.branch(self.flag(C)),
             0xd0 => self.branch(!self.flag(Z)),
             0xf0 => self.branch(self.flag(Z)),
+            // NOPs that read and ignore an operand
+            0x80 | 0x82 | 0x89 | 0xc2 | 0xe2 => {
+                self.fetch();
+            }
+            0x04 | 0x44 | 0x64 | 0x14 | 0x34 | 0x54 | 0x74 | 0xd4 | 0xf4 | 0x0c | 0x1c | 0x3c | 0x5c
+            | 0x7c | 0xdc | 0xfc => {
+                let mode = match op {
+                    0x04 | 0x44 | 0x64 => 1,
+                    0x0c => 3,
+                    0x14 | 0x34 | 0x54 | 0x74 | 0xd4 | 0xf4 => 5,
+                    _ => 7,
+                };
+                if let Some(addr) = self.addr_alu(mode) {
+                    self.read(addr);
+                }
+            }
             _ => return self.step_group(op),
         }
+        None
+    }
+
+    /// The "illegal" opcodes of the cc=3 group that behave the same on every 6510: LAX, SAX,
+    /// and the read-modify-write pairs SLO, RLA, SRE, RRA, DCP and ISC, plus the immediate
+    /// ones (ANC, ALR, ARR, LXA, SBX and the SBC twin at $eb). Unstable ones (XAA, SHA, ...)
+    /// are left out and stop the emulation.
+    fn step_illegal(&mut self, op: u8) -> Option<u8> {
+        let (aaa, bbb) = (op >> 5, op >> 2 & 7);
+        if bbb == 2 {
+            let v = self.fetch();
+            match op {
+                0x0b | 0x2b => {
+                    self.a = self.set_nz(self.a & v);
+                    self.set_flag(C, self.a & 0x80 != 0);
+                }
+                0x4b => {
+                    let r = self.a & v;
+                    self.set_flag(C, r & 1 != 0);
+                    self.a = self.set_nz(r >> 1);
+                }
+                0x6b => {
+                    let r = (self.a & v) >> 1 | (self.p & C) << 7;
+                    self.a = self.set_nz(r);
+                    self.set_flag(C, r & 0x40 != 0);
+                    self.set_flag(V, (r >> 6 ^ r >> 5) & 1 != 0);
+                }
+                0xab => {
+                    self.a = self.set_nz((self.a | 0xee) & v);
+                    self.x = self.a;
+                }
+                0xcb => {
+                    let ax = self.a & self.x;
+                    self.set_flag(C, ax >= v);
+                    self.x = self.set_nz(ax.wrapping_sub(v));
+                }
+                0xeb => self.adc(!v),
+                _ => return Some(op), // XAA
+            }
+            return None;
+        }
+        // SAX and LAX index zero page and absolute addresses by Y where the others use X
+        let addr = match (aaa, bbb) {
+            (4 | 5, 5) => Some(self.fetch().wrapping_add(self.y) as u16),
+            (4 | 5, 7) => Some(self.fetch16().wrapping_add(self.y as u16)),
+            _ => self.addr_alu(bbb),
+        };
+        let addr = addr?;
+        if aaa == 4 {
+            if bbb == 4 || bbb == 6 || bbb == 7 && op == 0x9f {
+                return Some(op); // SHA, SHX, TAS: unstable
+            }
+            self.write(addr, self.a & self.x);
+            return None;
+        }
+        if aaa == 5 {
+            if op == 0xbb {
+                return Some(op); // LAS
+            }
+            let v = self.read(addr);
+            self.a = self.set_nz(v);
+            self.x = self.a;
+            return None;
+        }
+        let v = self.read(addr);
+        self.write(addr, v);
+        let r = match aaa {
+            0 => {
+                let r = self.rmw(0, v);
+                self.a = self.set_nz(self.a | r);
+                r
+            }
+            1 => {
+                let r = self.rmw(1, v);
+                self.a = self.set_nz(self.a & r);
+                r
+            }
+            2 => {
+                let r = self.rmw(2, v);
+                self.a = self.set_nz(self.a ^ r);
+                r
+            }
+            3 => {
+                let r = self.rmw(3, v);
+                self.adc(r);
+                r
+            }
+            6 => {
+                let r = self.rmw(6, v);
+                self.compare(self.a, r);
+                r
+            }
+            _ => {
+                let r = self.rmw(7, v);
+                self.adc(!r);
+                r
+            }
+        };
+        self.write(addr, r);
         None
     }
 
@@ -442,7 +558,7 @@ impl Machine {
                     _ => self.compare(self.x, v),
                 }
             }
-            _ => return unsupported,
+            _ => return self.step_illegal(op),
         }
         None
     }
@@ -590,6 +706,55 @@ mod tests {
         // wait: lda $dc01; and #$10; bne wait would fall through at once if fire read as pressed
         let (_, stop) = run(&[0xad, 0x01, 0xdc, 0x29, 0x10, 0xd0, 0xf9, 0x4c, 0x07, 0x10]);
         assert_eq!(stop, Stop::Budget);
+    }
+
+    #[test]
+    fn illegal_opcodes_that_unpackers_use() {
+        // lda #$f0; sta $10; lax $10; dcp $10; isc $10; slo $10; nop #1; nop $10; jmp *
+        let (m, stop) = run(&[
+            0xa9, 0xf0, 0x85, 0x10, 0xa7, 0x10, 0xc7, 0x10, 0xe7, 0x10, 0x07, 0x10, 0x80, 0x01, 0x04, 0x10,
+            0x4c, 0x10, 0x10,
+        ]);
+        assert_eq!(stop, Stop::Idle(0x1010));
+        assert_eq!(m.x, 0xf0); // LAX loaded both A and X
+        // DCP: $f0 -> $ef; ISC: $ef -> $f0; SLO: $f0 << 1 = $e0
+        assert_eq!(m.ram[0x10], 0xe0);
+    }
+
+    #[test]
+    fn rmw_illegal_opcodes_update_the_accumulator() {
+        // clc; lda #$01; sta $10; slo $10 (mem = 2, A = 3); rla $10 (mem = 4, A = 3 & 4 = 0);
+        // sre $10 (mem = 2, A = 0 ^ 2 = 2); sec; lda #0; isc $10 (mem = 3, A = 0 - 3)
+        let (m, _) = run(&[
+            0x18, 0xa9, 0x01, 0x85, 0x10, 0x07, 0x10, 0x27, 0x10, 0x47, 0x10, 0x38, 0xa9, 0x00, 0xe7, 0x10,
+            0x4c, 0x10, 0x10,
+        ]);
+        assert_eq!(m.ram[0x10], 3);
+        assert_eq!(m.a, 0xfd);
+    }
+
+    #[test]
+    fn sax_stores_a_and_x() {
+        // ldx #$3c; lda #$f5; sax $20; jmp *
+        let (m, _) = run(&[0xa2, 0x3c, 0xa9, 0xf5, 0x87, 0x20, 0x4c, 0x06, 0x10]);
+        assert_eq!(m.ram[0x20], 0x3c & 0xf5);
+    }
+
+    #[test]
+    fn unstable_opcodes_still_stop() {
+        assert_eq!(run(&[0x8b, 0x00]).1, Stop::Halted(0x8b, 0x1000)); // XAA
+        assert_eq!(run(&[0xbb, 0x00, 0x20]).1, Stop::Halted(0xbb, 0x1000)); // LAS
+        assert_eq!(run(&[0x02]).1, Stop::Halted(0x02, 0x1000)); // JAM
+    }
+
+    #[test]
+    fn basic_program_loaded_at_0800_is_started_at_its_sys_target() {
+        // $0800: 0, then the line `10 SYS 2064` at $0801
+        let mut data = vec![0, 0x0b, 0x08, 0x0a, 0x00, 0x9e, b'2', b'0', b'6', b'4', 0, 0, 0];
+        data.resize(2064 - 0x0800, 0xea);
+        data.extend_from_slice(&[0x4c, 0x10, 0x08]);
+        let run = run_prg(0x0800, &data, 1000);
+        assert_eq!(run.stop, Stop::Idle(0x0810));
     }
 
     #[test]

@@ -9,6 +9,7 @@
 
 # Local example PRGs (third-party demos, see below)
 /examples/
+/testing/
 
 # Editors / IDEs
 /.idea/
