@@ -3,6 +3,7 @@ mod index;
 mod opcodes;
 mod scan;
 mod sid;
+mod vsf;
 
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -17,10 +18,11 @@ use index::{Stored, Tune};
 use scan::{count_kinds, fingerprints, Hit, Index, Params};
 
 const USAGE: &str = "\
-sidfind - find which HVSC tune is used in a C64 .prg file
+sidfind - find which HVSC tune is used in a C64 .prg file or VICE snapshot (.vsf)
 
 USAGE:
-    sidfind [OPTIONS] <PRG>...          identify the tunes in PRG files
+    sidfind [OPTIONS] <FILE>...         identify the tunes in PRG files and VICE snapshots
+                                        (a snapshot is recognised by its contents)
     sidfind --build-index <FILE> --hvsc <DIR>
                                         precompute an index of HVSC (optional, see below)
 
@@ -48,12 +50,14 @@ OPTIONS:
     --top <N>        Number of candidates to show per PRG (default 3).
     --cycles <N>     CPU cycles to emulate so a packed PRG can unpack itself before
                      matching (default 50000000, about 50 s of C64 time; 0 = don't
-                     emulate and only match the file as it is).
+                     emulate and only match the file as it is). Not used for snapshots,
+                     whose memory is used as it is.
     --min-score <N>  Ignore candidates whose score is below N (default 10). The score is
                      the number of PRG windows found in that tune, each weighted by 1/k^2
                      where k is the number of tunes containing it (so shared player code
                      and note tables count for almost nothing), multiplied by the share
                      of the tune's data that was found.
+    -V, --version    Show the version.
     -h, --help       Show this help.
 ";
 
@@ -96,7 +100,13 @@ impl Options {
     }
 }
 
-fn parse_args() -> Result<Option<Options>, String> {
+enum Parsed {
+    Run(Options),
+    Help,
+    Version,
+}
+
+fn parse_args() -> Result<Parsed, String> {
     let mut o = Options {
         hvsc: None,
         index: None,
@@ -121,7 +131,8 @@ fn parse_args() -> Result<Option<Options>, String> {
     }
     while let Some(arg) = args.next() {
         match arg.to_str() {
-            Some("-h" | "--help") => return Ok(None),
+            Some("-h" | "--help") => return Ok(Parsed::Help),
+            Some("-V" | "--version") => return Ok(Parsed::Version),
             Some("--hvsc") => o.hvsc = Some(value("--hvsc", args.next(), "a directory")?.into()),
             Some("--index") => o.index = Some(value("--index", args.next(), "a file")?.into()),
             Some("--build-index") => o.build_index = Some(value("--build-index", args.next(), "a file")?.into()),
@@ -150,9 +161,9 @@ fn parse_args() -> Result<Option<Options>, String> {
             return Err("--build-index only builds the index; run sidfind again to use it".into());
         }
     } else if o.prgs.is_empty() {
-        return Err("no PRG files given".into());
+        return Err("no PRG or VSF files given".into());
     }
-    Ok(Some(o))
+    Ok(Parsed::Run(o))
 }
 
 fn find_sids(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -212,9 +223,13 @@ struct Candidate {
 
 fn main() -> ExitCode {
     let opts = match parse_args() {
-        Ok(Some(o)) => o,
-        Ok(None) => {
+        Ok(Parsed::Run(o)) => o,
+        Ok(Parsed::Help) => {
             print!("{USAGE}");
+            return ExitCode::SUCCESS;
+        }
+        Ok(Parsed::Version) => {
+            println!("sidfind {}", env!("CARGO_PKG_VERSION"));
             return ExitCode::SUCCESS;
         }
         Err(e) => {
@@ -259,14 +274,22 @@ fn run(opts: &Options) -> Result<(), String> {
     let mut notes = Vec::new();
     for (id, path) in opts.prgs.iter().enumerate() {
         let data = fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-        let (load, body) = sid::split_prg(&data).ok_or(format!("{} is too short to be a PRG", path.display()))?;
-        let mut sources = vec![body];
-        let mut emulation = "not emulated".to_string();
-        let run = (opts.cycles > 0).then(|| cpu::run_prg(load, body, opts.cycles));
-        if let Some(run) = &run {
-            emulation = format!("emulated {} cycles, {}", run.cycles, run.stop);
-            sources.extend(run.chunks.iter().map(|c| &c[..]));
-        }
+        let run;
+        let (sources, emulation) = if vsf::is_vsf(&data) {
+            // A snapshot already holds the memory of a machine that has run: nothing to unpack.
+            let ram = vsf::ram(&data).map_err(|e| format!("{}: {e}", path.display()))?;
+            (vec![ram], "VICE snapshot, not emulated".to_string())
+        } else {
+            let (load, body) = sid::split_prg(&data).ok_or(format!("{} is too short to be a PRG", path.display()))?;
+            let mut sources = vec![body];
+            let mut emulation = "not emulated".to_string();
+            run = (opts.cycles > 0).then(|| cpu::run_prg(load, body, opts.cycles));
+            if let Some(run) = &run {
+                emulation = format!("emulated {} cycles, {}", run.cycles, run.stop);
+                sources.extend(run.chunks.iter().map(|c| &c[..]));
+            }
+            (sources, emulation)
+        };
         notes.push((emulation, index.add(id as u32, &sources)));
     }
 
