@@ -1,6 +1,7 @@
 # SidFind
 
-Finds which [HVSC](https://hvsc.c64.org/) tune is used in a C64 `.prg` file (a demo, intro, game, ...).
+Finds which [HVSC](https://hvsc.c64.org/) tune is used in a C64 `.prg` file (a demo, intro, game, ...) or in a
+[VICE](https://vice-emu.sourceforge.io/) snapshot (`.vsf`) of one that is running.
 It is a cross-platform alternative to Wilfred Bos's excellent [SID Known](https://csdb.dk/release/?id=262621).
 
 ## Motivation for this project
@@ -95,10 +96,11 @@ command line always overrides the environment.
 | `--index <FILE>` | `$SIDFIND_INDEX` | Use a precomputed index (option 2) |
 | `--build-index <FILE>` | | Build an index from `--hvsc` and exit |
 | `--sampling <N>` | 40 | With `--build-index`: how sparse the sample is (smaller = bigger and more accurate) |
-| `--cycles <N>` | 50000000 | CPU cycles to emulate so a packed PRG can unpack itself (about 50 s of C64 time). `0` skips emulation and matches the file as it is. |
+| `--cycles <N>` | 50000000 | CPU cycles to emulate so a packed PRG can unpack itself (about 50 s of C64 time). `0` skips emulation and matches the file as it is. Not used for snapshots. |
 | `--window <N>` | 12 | Match window in bytes. Smaller finds more modified tunes, with more false positives. An index keeps the value it was built with. |
 | `--top <N>` | 3 | Candidates to show per PRG |
 | `--min-score <N>` | 10 | Hide candidates whose score is below N |
+| `-V`, `--version` | | Show the version and exit |
 
 ### Reading the output
 
@@ -164,6 +166,9 @@ The `cross` tool (<https://github.com/cross-rs/cross>) or a CI matrix on GitHub 
 
 ## How it works
 
+A VICE snapshot (`.vsf`, recognised by its contents, not its name) skips steps 1 and 2: it already holds the 64 KiB of
+RAM of a machine that has run, so the demo is unpacked. That RAM is used as it is, and step 3 onwards applies.
+
 1. The PRG is loaded into a small 6510 emulator (the official opcodes and the stable illegal ones) with 64 KiB of RAM.
    It starts at the BASIC `SYS` target and runs for the cycle budget, or until it hits an idle loop, an unsupported opcode, or a jump into
    ROM. This lets decrunchers unpack the tune. There is no ROM, no interrupt, and no VIC, CIA or SID emulation.
@@ -189,8 +194,24 @@ The `cross` tool (<https://github.com/cross-rs/cross>) or a CI matrix on GitHub 
   interrupt can be missed, since interrupts are not emulated. SID Known's approach of hashing the emulated SID register writes can catch such cases; this tool
   does not do that.
 - Tunes that are not in HVSC cannot be identified.
+- VICE support was developed and tested with VICE 3.10 (GTK) arm64 on macOS (snapshots of the `C64SC` machine). Other
+  VICE versions and platforms should work, since the snapshot format is the same, but have not been tried.
+- Only snapshots of a C64 are read (other machines are rejected), and only their RAM: cartridge and REU contents are
+  ignored. A snapshot is the whole machine, so it also holds the player's runtime state (a tune can match a little
+  less than from the PRG, e.g. 89% instead of 100%) and the KERNAL's and the screen's memory.
 
 ## Changelog
+
+### 0.1.5 (2026-11-04)
+
+- VICE snapshots (`.vsf`) are accepted next to PRG files, also in the same run. Their 64 KiB of RAM is matched as it
+  is, without emulation (`--cycles` does not apply). A snapshot is recognised by its contents, not its file name. Only
+  C64 snapshots are read: other machines and corrupt or truncated files give an error message. Developed with
+  VICE 3.10 (GTK) arm64 on macOS.
+- New option `--version` (`-V`) prints the version.
+- The expected tune is the top match for all tested files, both with an index (default settings) and when reading HVSC 
+  on every run. Scores of a snapshot are close to those of its PRG, a little lower for some.
+- No change to the index format or to the fingerprints: an index built with 0.1.3 keeps working.
 
 ### 0.1.3 (2026-10-27)
 
