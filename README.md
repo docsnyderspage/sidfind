@@ -159,7 +159,7 @@ cargo build --release --target x86_64-pc-windows-gnu
 ```
 
 The `cross` tool (<https://github.com/cross-rs/cross>) or a CI matrix on GitHub Actions
-(`ubuntu-latest`, `macos-latest`, `windows-latest`) are alternatives that avoid installing linkers yourself.
+(`ubuntu-latest`, `macos-14`, `windows-latest`) are alternatives that avoid installing linkers yourself.
 
 > Note: the unit tests run automatically on Linux, macOS and Windows (see `.github/workflows/`). The author develops and
 > tries SidFind on real HVSC data on macOS only, so Linux and Windows have had less hands-on use.
@@ -201,6 +201,9 @@ RAM of a machine that has run, so the demo is unpacked. That RAM is used as it i
   less than from the PRG, e.g. 89% instead of 100%) and the KERNAL's and the screen's memory.
 
 ## Changelog
+
+### 0.1.51 (2026-11-04)
+- Bugfix (missing source file)
 
 ### 0.1.5 (2026-11-04)
 

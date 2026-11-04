@@ -19,9 +19,9 @@ jobs:
           # Linux is built on the oldest runner image so the binaries work with older glibc.
           - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, test: true }
           - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu, test: true }
-          - { os: macos-latest, target: aarch64-apple-darwin, test: true }
+          - { os: macos-14, target: aarch64-apple-darwin, test: true }
           # built on the arm runner, so it cannot be tested there
-          - { os: macos-latest, target: x86_64-apple-darwin, test: false }
+          - { os: macos-14, target: x86_64-apple-darwin, test: false }
           - { os: windows-latest, target: x86_64-pc-windows-msvc, test: true }
     runs-on: ${{ matrix.os }}
     steps:
