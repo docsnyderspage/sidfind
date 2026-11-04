@@ -202,7 +202,7 @@ RAM of a machine that has run, so the demo is unpacked. That RAM is used as it i
 
 ## Changelog
 
-### 0.1.41 (2026-11-03)
+### 0.1.5 (2026-11-04)
 
 - VICE snapshots (`.vsf`) are accepted next to PRG files, also in the same run. Their 64 KiB of RAM is matched as it
   is, without emulation (`--cycles` does not apply). A snapshot is recognised by its contents, not its file name. Only
