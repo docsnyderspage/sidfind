@@ -202,7 +202,7 @@ RAM of a machine that has run, so the demo is unpacked. That RAM is used as it i
 
 ## Changelog
 
-### 0.1.51 (2026-11-04)
+### 0.1.52 (2026-11-04)
 - Bugfix (missing source file)
 
 ### 0.1.5 (2026-11-04)
