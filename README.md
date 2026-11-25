@@ -159,7 +159,7 @@ cargo build --release --target x86_64-pc-windows-gnu
 ```
 
 The `cross` tool (<https://github.com/cross-rs/cross>) or a CI matrix on GitHub Actions
-(`ubuntu-latest`, `macos-14`, `windows-latest`) are alternatives that avoid installing linkers yourself.
+(`ubuntu-latest`, `macos-15`, `windows-latest`) are alternatives that avoid installing linkers yourself.
 
 > Note: the unit tests run automatically on Linux, macOS and Windows (see `.github/workflows/`). The author develops and
 > tries SidFind on real HVSC data on macOS only, so Linux and Windows have had less hands-on use.
