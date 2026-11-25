@@ -66,8 +66,8 @@ struct State {
 struct Ui {
     frame: Frame,
     panel: Panel,
-    settings_button: BitmapButton,
-    theme_button: BitmapButton,
+    settings_button: StaticBitmap,
+    theme_button: StaticBitmap,
     logo: StaticBitmap,
     version: StaticText,
     source: TextCtrl,
@@ -137,9 +137,9 @@ pub fn build(theme: Theme) {
     let source_clear = trash_button(&panel, "Clear source file");
     // the icon buttons are as tall as the input
     let side = source.get_best_size().height;
-    for button in [&settings_button, &theme_button, &source_clear] {
-        square(button, side);
-    }
+    square(&settings_button, side);
+    square(&theme_button, side);
+    square(&source_clear, side);
     let source_row = BoxSizer::builder(Orientation::Horizontal).build();
     source_row.add(&source, 1, SizerFlag::Expand | SizerFlag::AlignCenterVertical, 0);
     source_row.add(&source_browse, 0, SizerFlag::AlignCenterVertical | SizerFlag::Left, GAP);
@@ -285,9 +285,9 @@ impl Ui {
             event.skip(true);
         });
         let ui = self.clone();
-        self.settings_button.on_click(move |_| ui.open_settings());
+        self.settings_button.on_mouse_left_up(move |_| ui.open_settings());
         let ui = self.clone();
-        self.theme_button.on_click(move |_| ui.show_theme_menu());
+        self.theme_button.on_mouse_left_up(move |_| ui.show_theme_menu());
         let ui = self.clone();
         self.frame.on_menu_selected(move |event| ui.on_theme_chosen(event.get_id()));
 

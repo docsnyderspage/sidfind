@@ -37,7 +37,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-15]
+        # ubuntu-22.04, not -latest: the binary needs the glibc of the build machine or newer, so
+        # an older runner keeps it working on older distributions (ubuntu-latest needs GLIBC 2.43)
+        os: [windows-latest, ubuntu-22.04, macos-15]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:

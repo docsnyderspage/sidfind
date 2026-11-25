@@ -11,6 +11,9 @@ pub const GAP: i32 = 8;
 pub const CAPTION_INSET: i32 = 6;
 pub const TITLE: &str = "SidFind";
 
+/// The grey of the icon SVGs (the colour they draw in at rest). Hover swaps it for the text colour.
+pub const ICON_GREY: &str = "#8e8e93";
+
 /// Half-filled circle ("appearance"), same grey as the trash icon.
 pub const THEME_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="#8e8e93"/></svg>"##;
 
@@ -55,13 +58,37 @@ fn trash_svg(opacity: f32) -> String {
     )
 }
 
-/// An icon-only button drawn from an inline SVG (crisp at any scale, no image files). It is a
-/// BitmapButton because a plain Button with an empty label ignores its bitmap on macOS.
-pub fn icon_button(panel: &dyn WxWidget, svg: &str, size: i32, tip: &str) -> BitmapButton {
-    let icon = BitmapBundle::from_svg_text(svg, Size::new(size, size)).and_then(|b| b.get_bitmap_for(panel));
-    let button = BitmapButton::builder(panel).with_bitmap(icon).build();
-    button.set_tooltip(tip);
-    button
+/// An icon-only control drawn from an inline SVG (crisp at any scale, no image files). It is a
+/// StaticBitmap, not a button: wxWidgets draws a bezel around a bitmap button on macOS whatever
+/// the border style, and the click is bound by the caller (`on_mouse_left_up`).
+/// On hover the icon takes the window text colour and the cursor becomes a hand, so it reads as
+/// clickable. The SVG must draw in `ICON_GREY`, which is what gets swapped on hover.
+pub fn icon_button(panel: &Panel, svg: &'static str, size: i32, tip: &str) -> StaticBitmap {
+    let icon = StaticBitmap::builder(panel).with_bitmap(icon_bitmap(panel, svg, size)).build();
+    icon.set_tooltip(tip);
+    if let Some(hand) = Cursor::from_stock(StockCursor::Hand) {
+        icon.set_cursor(Some(&hand));
+    }
+    let on_enter = icon;
+    icon.on_mouse_enter(move |_| {
+        let ink = SystemSettings::get_colour(SystemColour::WindowText);
+        let hover = svg.replace(ICON_GREY, &format!("#{:02x}{:02x}{:02x}", ink.r, ink.g, ink.b));
+        if let Some(bundle) = BitmapBundle::from_svg_text(&hover, Size::new(size, size)) {
+            on_enter.set_bitmap_bundle(&bundle);
+        }
+    });
+    let on_leave = icon;
+    icon.on_mouse_leave(move |_| {
+        if let Some(bundle) = BitmapBundle::from_svg_text(svg, Size::new(size, size)) {
+            on_leave.set_bitmap_bundle(&bundle);
+        }
+    });
+    icon
+}
+
+/// The bitmap of an inline SVG icon at `size`.
+fn icon_bitmap(panel: &Panel, svg: &str, size: i32) -> Option<Bitmap> {
+    BitmapBundle::from_svg_text(svg, Size::new(size, size)).and_then(|b| b.get_bitmap_for(panel))
 }
 
 /// The trash button: starts disabled, with a dimmed icon for that state.
@@ -75,8 +102,8 @@ pub fn trash_button(panel: &dyn WxWidget, tip: &str) -> BitmapButton {
 
 /// Makes an icon button at least `side` pixels square, so it lines up with the fields and buttons
 /// beside it (Windows sizes a bitmap button to its icon; macOS pads it, which stays as it is).
-pub fn square(button: &BitmapButton, side: i32) {
-    button.set_min_size(Size::new(side, side));
+pub fn square(window: &dyn WxWidget, side: i32) {
+    window.set_min_size(Size::new(side, side));
 }
 
 /// A path setting: a Select/Change button, a trash icon and a grey caption with the path.
