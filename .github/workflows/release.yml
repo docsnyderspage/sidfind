@@ -69,8 +69,53 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  # The desktop GUI, one archive per platform next to the command line archives. It has its own
+  # job because it builds wxWidgets (minutes, not seconds) and needs the C++ toolchain.
+  build-gui:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add target
+        run: rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: gui-${{ matrix.target }}
+
+      - name: Test
+        run: cargo test --locked --release -p sidfind-gui --target ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --locked --release -p sidfind-gui --target ${{ matrix.target }}
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          $name = "sidfind-gui-$env:TAG-$env:TARGET"
+          New-Item -ItemType Directory -Path "dist/$name" | Out-Null
+          Copy-Item "target/$env:TARGET/release/sidfind-gui.exe", LICENSE, README.md -Destination "dist/$name"
+          Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
+          Remove-Item -Recurse "dist/$name"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sidfind-gui-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
   release:
-    needs: build
+    needs: [build, build-gui]
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -15,3 +15,7 @@ sidfind-core = { path = "../sidfind-core" }
 # Native widgets via wxWidgets. Default features (printing, TIFF/JPEG, regex, ...) are not
 # needed and cost about 1.8 MB.
 wxdragon = { version = "0.9.25", default-features = false }
+
+[build-dependencies]
+# Embeds the Windows application manifest (see build.rs); does nothing on other platforms.
+embed-manifest = "1.4"

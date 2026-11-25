@@ -2,8 +2,18 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # feature branches too, so the GUI can be tried on every platform without a pull request
+    # or a release
+    branches: [main, "feat/**"]
   pull_request:
+  # the "Run workflow" button on the Actions tab (GitHub only offers it for workflows that
+  # exist on the default branch)
+  workflow_dispatch:
+
+# a newer push to the same branch makes the older run pointless
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -19,3 +29,35 @@ jobs:
       - uses: actions/checkout@v4
       - run: cargo build --locked --release
       - run: cargo test --locked --release
+
+  # The GUI is not part of the default workspace members (it needs a C++ toolchain and builds
+  # wxWidgets, which takes minutes), so it has its own job. rust-cache keeps the wxWidgets
+  # build between runs.
+  gui:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: gui
+      - run: cargo build --locked --release -p sidfind-gui
+      - run: cargo test --locked --release -p sidfind-gui
+
+      # a build to try by hand: download it from the run's page (it is not a release)
+      - name: Collect the build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist | Out-Null
+          Copy-Item target/release/sidfind-gui.exe dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sidfind-gui-${{ runner.os }}-dev-build
+          path: dist/*
+          retention-days: 7
+          if-no-files-found: error
