@@ -7,6 +7,9 @@
 # Never commit the HVSC collection or SID files
 *.sid
 
+# AI related
+.agents/*
+
 # Local example PRGs (third-party demos, see below)
 /examples/
 /testing/

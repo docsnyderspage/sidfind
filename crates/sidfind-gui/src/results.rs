@@ -7,7 +7,7 @@ use std::rc::Rc;
 use sidfind_core::Identification;
 use wxdragon::prelude::*;
 
-use crate::widgets::{file_name, fit, GAP, PAD};
+use crate::widgets::{GAP, PAD, file_name, fit, muted};
 
 /// How many matches can be shown (the scan settings' `top` must not exceed this).
 const MAX_ROWS: usize = 10;
@@ -73,7 +73,7 @@ impl ResultsView {
                 let name = StaticText::builder(&row).with_label(" ").build();
                 let score = StaticText::builder(&row).with_label(" ").with_style(StaticTextStyle::AlignRight).build();
                 score.set_min_size(Size::new(score_width, -1));
-                score.set_foreground_color(SystemSettings::get_colour(SystemColour::GrayText));
+                score.set_foreground_color(muted(&row));
 
                 let line = BoxSizer::builder(Orientation::Horizontal).build();
                 line.add(&bar, 0, SizerFlag::AlignCenterVertical, 0);
@@ -147,11 +147,7 @@ impl ResultsView {
             self.note.wrap((width - PAD).max(120));
         }
         // what the fixed columns and gaps leave for the tune's path
-        let fixed = BAR_WIDTH
-            + self.rows[0].percent.get_size().width
-            + self.rows[0].score.get_size().width
-            + 3 * GAP
-            + PAD;
+        let fixed = BAR_WIDTH + self.rows[0].percent.get_size().width + self.rows[0].score.get_size().width + 3 * GAP + PAD;
         let available = (width - fixed).max(80);
         for (row, name) in self.rows.iter().zip(&content.names) {
             row.name.set_label(&fit(&row.name, name, available));

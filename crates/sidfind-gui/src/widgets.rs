@@ -17,6 +17,28 @@ pub const THEME_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="2
 /// Gear ("settings"), same grey.
 pub const GEAR_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>"##;
 
+/// Perceived brightness, 0 (black) to 255 (white).
+pub fn luma(c: Colour) -> f32 {
+    0.299 * c.r as f32 + 0.587 * c.g as f32 + 0.114 * c.b as f32
+}
+
+/// `a` blended towards `b` by `t` (0.0 = a, 1.0 = b).
+pub fn mix(a: Colour, b: Colour, t: f32) -> Colour {
+    let channel = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
+    Colour::rgb(channel(a.r, b.r), channel(a.g, b.g), channel(a.b, b.b))
+}
+
+/// The grey for secondary text on `window`. On a dark background the system grey (a dark
+/// grey on Windows) is too faint, so it is derived from the text colour instead.
+pub fn muted(window: &dyn WxWidget) -> Colour {
+    let background = window.get_background_color();
+    if luma(background) < 128.0 {
+        mix(SystemSettings::get_colour(SystemColour::WindowText), background, 0.3)
+    } else {
+        SystemSettings::get_colour(SystemColour::GrayText)
+    }
+}
+
 /// Vertical offset that puts the baseline of a line of text on the bottom edge of something
 /// `above_height` tall: the text box is `text_height` high, of which `descent` is below its baseline.
 pub fn baseline_offset(above_height: i32, text_height: i32, descent: i32) -> i32 {
@@ -51,6 +73,12 @@ pub fn trash_button(panel: &dyn WxWidget, tip: &str) -> BitmapButton {
     button
 }
 
+/// Makes an icon button at least `side` pixels square, so it lines up with the fields and buttons
+/// beside it (Windows sizes a bitmap button to its icon; macOS pads it, which stays as it is).
+pub fn square(button: &BitmapButton, side: i32) {
+    button.set_min_size(Size::new(side, side));
+}
+
 /// A path setting: a Select/Change button, a trash icon and a grey caption with the path.
 #[derive(Clone, Copy)]
 pub struct PathSetting {
@@ -64,16 +92,11 @@ impl PathSetting {
     /// `description` is shown in grey, and `link` (text, URL) as a link that opens in the
     /// default browser. The link sits at the right end of the label's line, the description
     /// on its own line below it; the button follows.
-    pub fn new(
-        panel: &Panel,
-        label: &str,
-        description: &str,
-        link: Option<(&str, &str)>,
-        clear_tip: &str,
-    ) -> (PathSetting, BoxSizer) {
+    pub fn new(panel: &Panel, label: &str, description: &str, link: Option<(&str, &str)>, clear_tip: &str) -> (PathSetting, BoxSizer) {
         let label = StaticText::builder(panel).with_label(label).build();
         let button = Button::builder(panel).with_label("Select...").build();
         let clear = trash_button(panel, clear_tip);
+        square(&clear, button.get_best_size().height);
         let caption = StaticText::builder(panel).with_label(" ").build();
         let row = BoxSizer::builder(Orientation::Horizontal).build();
         row.add(&button, 1, SizerFlag::Expand | SizerFlag::AlignCenterVertical, 0);
@@ -91,7 +114,7 @@ impl PathSetting {
         cell.add_sizer(&header, 0, SizerFlag::Expand | SizerFlag::Bottom, below_header);
         if !description.is_empty() {
             let note = StaticText::builder(panel).with_label(description).build();
-            note.set_foreground_color(SystemSettings::get_colour(SystemColour::GrayText));
+            note.set_foreground_color(muted(panel));
             cell.add(&note, 0, SizerFlag::Bottom, 6);
         }
         cell.add_sizer(&row, 0, SizerFlag::Expand, 0);
@@ -111,7 +134,7 @@ impl PathSetting {
     /// `row_width` is the width of the row the button and its trash icon share.
     pub fn set_caption(&self, path: Option<&Path>, row_width: i32) {
         let button = row_width - self.clear.get_size().width - GAP;
-        self.caption.set_foreground_color(SystemSettings::get_colour(SystemColour::GrayText));
+        self.caption.set_foreground_color(muted(&self.caption));
         let text = path.map(|p| p.display().to_string()).unwrap_or_default();
         self.caption.set_label(&fit(&self.caption, &text, (button - CAPTION_INSET).max(60)));
     }

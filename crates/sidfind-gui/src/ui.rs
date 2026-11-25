@@ -14,7 +14,10 @@ use crate::prefs::{Missing, Prefs};
 use crate::results::ResultsView;
 use crate::settings_window;
 use crate::theme::{self, Applied, Theme};
-use crate::widgets::{self, baseline_offset, file_name, fit, icon_button, indented, trash_button, GAP, GEAR_SVG, INFO_SVG, PAD, THEME_SVG, TITLE};
+use crate::widgets::{
+    self, GAP, GEAR_SVG, INFO_SVG, PAD, THEME_SVG, TITLE, baseline_offset, file_name, fit, icon_button, indented, luma, mix, muted, square,
+    trash_button,
+};
 
 /// Label of the main button.
 const FIND: &str = "Find SID";
@@ -132,6 +135,11 @@ pub fn build(theme: Theme) {
     let source = TextCtrl::builder(&panel).with_style(TextCtrlStyle::ReadOnly).build();
     let source_browse = Button::builder(&panel).with_label("Browse...").build();
     let source_clear = trash_button(&panel, "Clear source file");
+    // the icon buttons are as tall as the input
+    let side = source.get_best_size().height;
+    for button in [&settings_button, &theme_button, &source_clear] {
+        square(button, side);
+    }
     let source_row = BoxSizer::builder(Orientation::Horizontal).build();
     source_row.add(&source, 1, SizerFlag::Expand | SizerFlag::AlignCenterVertical, 0);
     source_row.add(&source_browse, 0, SizerFlag::AlignCenterVertical | SizerFlag::Left, GAP);
@@ -189,7 +197,7 @@ pub fn build(theme: Theme) {
         gauge_shown: false,
         results_shown: false,
         theme,
-        field_colour: source.get_background_color(),
+        field_colour: SystemSettings::get_colour(SystemColour::Window),
         logo_colour: String::new(),
     };
 
@@ -315,7 +323,9 @@ impl Ui {
     /// runs are refused.
     fn on_drop(&self, files: &[String]) -> bool {
         self.drop_hover(false);
-        let Some(file) = files.iter().map(PathBuf::from).find(|p| p.is_file()) else { return false };
+        let Some(file) = files.iter().map(PathBuf::from).find(|p| p.is_file()) else {
+            return false;
+        };
         if !self.idle() {
             return false;
         }
@@ -375,11 +385,16 @@ impl Ui {
             (_, None, true, true) => (format!("Reading HVSC: {}", file_name(tunes.unwrap())), false),
             (_, None, true, false) => (format!("Using index: {}", file_name(tunes.unwrap())), false),
         };
-        let colour = SystemSettings::get_colour(if missing { SystemColour::WindowText } else { SystemColour::GrayText });
+        let colour = if missing { SystemSettings::get_colour(SystemColour::WindowText) } else { muted(&self.panel) };
         self.info.show(missing);
         self.status.set_foreground_color(colour);
         self.status.set_label(&if text.is_empty() { " ".to_string() } else { text });
         self.status.set_tooltip(&tunes.map(|p| p.display().to_string()).unwrap_or_default());
+        // the field is coloured explicitly: on Windows in dark mode it would stay white
+        let field = SystemSettings::get_colour(SystemColour::Window);
+        self.state.borrow_mut().field_colour = field;
+        self.source.set_background_color(field);
+        self.source.set_foreground_color(SystemSettings::get_colour(SystemColour::WindowText));
         self.refresh_caption();
         self.refresh_logo();
         self.refresh_version();
@@ -405,7 +420,7 @@ impl Ui {
     /// The version is a quiet detail: the system grey, pulled toward the window background.
     fn refresh_version(&self) {
         let background = self.panel.get_background_color();
-        self.version.set_foreground_color(mix(SystemSettings::get_colour(SystemColour::GrayText), background, VERSION_FADE));
+        self.version.set_foreground_color(mix(muted(&self.panel), background, VERSION_FADE));
     }
 
     /// Sets the full-path caption under the source field, cut in the middle to the width of
@@ -415,7 +430,7 @@ impl Ui {
         let panel = self.panel.get_client_size().width;
         let field = panel - 2 * PAD - self.source_browse.get_size().width - self.source_clear.get_size().width - 2 * GAP;
         let text = self.state.borrow().source.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
-        self.source_caption.set_foreground_color(SystemSettings::get_colour(SystemColour::GrayText));
+        self.source_caption.set_foreground_color(muted(&self.panel));
         self.source_caption.set_label(&fit(&self.source_caption, &text, (field - widgets::CAPTION_INSET).max(60)));
     }
 
@@ -471,7 +486,9 @@ impl Ui {
             let source = if prefs.on_the_fly { prefs.hvsc.clone().map(Source::Hvsc) } else { prefs.index.clone().map(Source::Index) };
             (st.source.clone(), source, st.settings.clone(), prefs.on_the_fly)
         };
-        let (Some(file), Some(source)) = (file, source) else { return };
+        let (Some(file), Some(source)) = (file, source) else {
+            return;
+        };
         // an index lookup is too quick for a progress bar; reading the whole HVSC is not
         if on_the_fly && !self.state.borrow().gauge_shown {
             self.state.borrow_mut().gauge_shown = true;
@@ -539,21 +556,10 @@ impl Ui {
     }
 }
 
-/// Perceived brightness, 0 (black) to 255 (white).
-fn luma(c: Colour) -> f32 {
-    0.299 * c.r as f32 + 0.587 * c.g as f32 + 0.114 * c.b as f32
-}
-
 /// `accent` as text colour on `background`: on a dark background the accent (a fairly deep
 /// blue) is lightened toward white so it stays readable; on a light one it is used as it is.
 fn readable(accent: Colour, background: Colour) -> Colour {
     if luma(background) < 128.0 { mix(accent, Colour::rgb(255, 255, 255), 0.55) } else { accent }
-}
-
-/// `a` blended towards `b` by `t` (0.0 = a, 1.0 = b).
-fn mix(a: Colour, b: Colour, t: f32) -> Colour {
-    let channel = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
-    Colour::rgb(channel(a.r, b.r), channel(a.g, b.g), channel(a.b, b.b))
 }
 
 /// Makes `window` accept dropped files for `ui`.
