@@ -4,6 +4,7 @@ description = "Native desktop GUI for sidfind"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "sidfind-gui"

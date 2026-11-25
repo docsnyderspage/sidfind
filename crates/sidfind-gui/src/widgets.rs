@@ -17,6 +17,12 @@ pub const THEME_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="2
 /// Gear ("settings"), same grey.
 pub const GEAR_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>"##;
 
+/// Vertical offset that puts the baseline of a line of text on the bottom edge of something
+/// `above_height` tall: the text box is `text_height` high, of which `descent` is below its baseline.
+pub fn baseline_offset(above_height: i32, text_height: i32, descent: i32) -> i32 {
+    (above_height - (text_height - descent)).max(0)
+}
+
 /// Info icon ("i" in an outlined circle), same grey.
 pub const INFO_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>"##;
 
@@ -54,8 +60,17 @@ pub struct PathSetting {
 }
 
 impl PathSetting {
-    /// The setting with its label above; add the returned sizer to a layout.
-    pub fn new(panel: &Panel, label: &str, clear_tip: &str) -> (PathSetting, BoxSizer) {
+    /// The setting with its label above; add the returned sizer to a layout. A non-empty
+    /// `description` is shown in grey, and `link` (text, URL) as a link that opens in the
+    /// default browser. The link sits at the right end of the label's line, the description
+    /// on its own line below it; the button follows.
+    pub fn new(
+        panel: &Panel,
+        label: &str,
+        description: &str,
+        link: Option<(&str, &str)>,
+        clear_tip: &str,
+    ) -> (PathSetting, BoxSizer) {
         let label = StaticText::builder(panel).with_label(label).build();
         let button = Button::builder(panel).with_label("Select...").build();
         let clear = trash_button(panel, clear_tip);
@@ -64,7 +79,21 @@ impl PathSetting {
         row.add(&button, 1, SizerFlag::Expand | SizerFlag::AlignCenterVertical, 0);
         row.add(&clear, 0, SizerFlag::AlignCenterVertical | SizerFlag::Left, GAP);
         let cell = BoxSizer::builder(Orientation::Vertical).build();
-        cell.add(&label, 0, SizerFlag::Bottom, 6);
+        // the label, with the link (if any) at the right end of the same line
+        let header = BoxSizer::builder(Orientation::Horizontal).build();
+        header.add(&label, 0, SizerFlag::AlignCenterVertical, 0);
+        header.add_stretch_spacer(1);
+        if let Some((text, url)) = link {
+            let link = HyperlinkCtrl::builder(panel).with_label(text).with_url(url).build();
+            header.add(&link, 0, SizerFlag::AlignCenterVertical, 0);
+        }
+        let below_header = if description.is_empty() { 6 } else { 2 };
+        cell.add_sizer(&header, 0, SizerFlag::Expand | SizerFlag::Bottom, below_header);
+        if !description.is_empty() {
+            let note = StaticText::builder(panel).with_label(description).build();
+            note.set_foreground_color(SystemSettings::get_colour(SystemColour::GrayText));
+            cell.add(&note, 0, SizerFlag::Bottom, 6);
+        }
         cell.add_sizer(&row, 0, SizerFlag::Expand, 0);
         cell.add_sizer(&indented(&caption), 0, SizerFlag::Expand | SizerFlag::Top, 4);
         (PathSetting { button, clear, caption }, cell)
@@ -143,6 +172,15 @@ mod tests {
         assert_eq!(cut.chars().count(), 20);
         assert_eq!(cut, "/User...VSC/C64Music"); // 20 characters: 5 kept at the start, 12 at the end
         assert_eq!(shorten("ääääääääää", 6).chars().count(), 6, "must not split a multi-byte character");
+    }
+
+    #[test]
+    fn baseline_offset_puts_the_text_baseline_on_the_bottom_edge() {
+        // a 30 px logo, 14 px tall text with 3 px below its baseline: the text box starts at
+        // 30 - (14 - 3) = 19, so its baseline (box top + 11) lands on 30
+        assert_eq!(baseline_offset(30, 14, 3), 19);
+        assert_eq!(baseline_offset(30, 14, 0), 16);
+        assert_eq!(baseline_offset(5, 14, 3), 0, "never negative");
     }
 
     #[test]

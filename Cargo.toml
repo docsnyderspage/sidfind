@@ -9,3 +9,4 @@ default-members = ["crates/sidfind-core", "crates/sidfind-cli"]
 version = "0.1.51"
 edition = "2024"
 license = "MIT"
+repository = "https://github.com/docsnyderspage/sidfind"

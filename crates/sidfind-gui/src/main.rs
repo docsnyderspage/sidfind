@@ -5,6 +5,7 @@
 
 mod job;
 mod prefs;
+mod results;
 mod settings_window;
 mod theme;
 mod ui;

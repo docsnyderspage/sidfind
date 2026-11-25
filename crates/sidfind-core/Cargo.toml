@@ -4,5 +4,6 @@ description = "Identify which HVSC tune is used in a C64 PRG or VICE snapshot (l
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]

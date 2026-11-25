@@ -32,10 +32,29 @@ fn default_mode(hvsc: &Option<PathBuf>, index: &Option<PathBuf>) -> bool {
     index.is_none() && hvsc.is_some()
 }
 
+/// A setting a scan cannot do without.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Missing {
+    Hvsc,
+    Index,
+}
+
 impl Prefs {
-    /// True when nothing was ever saved and no environment default exists: a first run.
-    pub fn is_unconfigured(&self) -> bool {
-        self.hvsc.is_none() && self.index.is_none()
+    /// The HVSC folder is required for every scan, so without it the app is not set up yet.
+    pub fn needs_setup(&self) -> bool {
+        self.hvsc.is_none()
+    }
+
+    /// What a scan in the current mode still lacks, if anything: the HVSC folder always, and
+    /// in indexed mode also the index file.
+    pub fn missing(&self) -> Option<Missing> {
+        if self.hvsc.is_none() {
+            Some(Missing::Hvsc)
+        } else if !self.on_the_fly && self.index.is_none() {
+            Some(Missing::Index)
+        } else {
+            None
+        }
     }
 
     /// Loads the saved settings (the app name must be set first), with `SIDFIND_HVSC` and
@@ -95,8 +114,21 @@ mod tests {
     }
 
     #[test]
-    fn unconfigured_means_neither_path() {
-        assert!(Prefs::default().is_unconfigured());
-        assert!(!Prefs { hvsc: p("/h"), ..Prefs::default() }.is_unconfigured());
+    fn setup_is_needed_until_the_hvsc_folder_is_set() {
+        assert!(Prefs::default().needs_setup());
+        assert!(Prefs { index: p("/i"), ..Prefs::default() }.needs_setup(), "an index alone is not enough");
+        assert!(!Prefs { hvsc: p("/h"), ..Prefs::default() }.needs_setup());
+    }
+
+    #[test]
+    fn a_scan_always_needs_the_hvsc_folder_and_in_indexed_mode_the_index_too() {
+        let (hvsc, index) = (p("/h"), p("/i"));
+        // indexed mode (on_the_fly = false)
+        assert_eq!(Prefs { index: index.clone(), ..Prefs::default() }.missing(), Some(Missing::Hvsc), "index without HVSC");
+        assert_eq!(Prefs { hvsc: hvsc.clone(), ..Prefs::default() }.missing(), Some(Missing::Index));
+        assert_eq!(Prefs { hvsc: hvsc.clone(), index: index.clone(), on_the_fly: false }.missing(), None);
+        // on-the-fly mode needs no index
+        assert_eq!(Prefs { hvsc: hvsc.clone(), index: None, on_the_fly: true }.missing(), None);
+        assert_eq!(Prefs { hvsc: None, index, on_the_fly: true }.missing(), Some(Missing::Hvsc));
     }
 }

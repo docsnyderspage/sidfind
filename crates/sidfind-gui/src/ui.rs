@@ -6,25 +6,36 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use sidfind_core::api::CANCELLED;
-use sidfind_core::{Identification, ScanSettings, Source};
+use sidfind_core::{ScanSettings, Source};
 use wxdragon::prelude::*;
 
 use crate::job::{Job, Outcome};
-use crate::prefs::Prefs;
+use crate::prefs::{Missing, Prefs};
+use crate::results::ResultsView;
 use crate::settings_window;
 use crate::theme::{self, Applied, Theme};
-use crate::widgets::{self, file_name, fit, icon_button, indented, trash_button, GAP, GEAR_SVG, INFO_SVG, PAD, THEME_SVG, TITLE};
+use crate::widgets::{self, baseline_offset, file_name, fit, icon_button, indented, trash_button, GAP, GEAR_SVG, INFO_SVG, PAD, THEME_SVG, TITLE};
 
 /// Label of the main button.
 const FIND: &str = "Find SID";
 /// Poll interval for the running job, in milliseconds.
 const TICK_MS: i32 = 100;
-/// The wordmark with its text converted to outlines (assets/logo-outlined.svg), so it needs
-/// no font; the original assets/logo.svg uses live text.
-const LOGO_SVG: &str = include_str!("../../../assets/logo-outlined.svg");
-/// Logical size in the header, keeping the aspect ratio of the SVG (163.65 x 31.81).
-const LOGO_HEIGHT: i32 = 40;
-const LOGO_WIDTH: i32 = LOGO_HEIGHT * 16365 / 3181;
+/// The logo (assets/logo.svg): shapes only, no text, so it needs no font. It fills its
+/// drawing area, so the bottom of the letters is the bottom edge of the image.
+const LOGO_SVG: &str = include_str!("../../../assets/logo.svg");
+/// The drawing area of the logo (its viewBox), which fixes its proportions.
+const LOGO_VIEW: (f32, f32) = (165.53185, 19.608799);
+/// Width of the logo in the header, in logical pixels; the height follows from the proportions.
+const LOGO_WIDTH: i32 = 236;
+/// Width of the window at startup. Wide enough that a typical result line (match share, score
+/// and the tune's path in HVSC) fits without wrapping; it can still be resized.
+const WINDOW_WIDTH: i32 = 820;
+/// Narrowest the window can be made.
+const MIN_WIDTH: i32 = 520;
+/// How far the version's grey is pulled toward the window background (0 = system grey).
+const VERSION_FADE: f32 = 0.35;
+/// The release version, shown next to the title. Comes from Cargo.toml.
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 // ids of the entries of the theme menu
 const ID_THEME_SYSTEM: i32 = 7001;
 const ID_THEME_LIGHT: i32 = 7002;
@@ -55,6 +66,7 @@ struct Ui {
     settings_button: BitmapButton,
     theme_button: BitmapButton,
     logo: StaticBitmap,
+    version: StaticText,
     source: TextCtrl,
     source_browse: Button,
     source_clear: BitmapButton,
@@ -65,25 +77,42 @@ struct Ui {
     status: StaticText,
     scan: Button,
     gauge: Gauge,
-    results: TextCtrl,
+    results: ResultsView,
     timer: Rc<Timer<Frame>>,
     state: Rc<RefCell<State>>,
 }
 
 pub fn build(theme: Theme) {
-    let frame = Frame::builder().with_title(TITLE).with_size(Size::new(640, 640)).build();
+    let frame = Frame::builder().with_title(TITLE).with_size(Size::new(WINDOW_WIDTH, 640)).build();
     let panel = Panel::builder(&frame).build();
     let root = BoxSizer::builder(Orientation::Vertical).build();
 
-    // header: the wordmark over the subtitle. The logo is drawn in the text colour of the
-    // current theme (see `refresh_logo`), so it is visible on light and dark backgrounds.
+    // header: the logo with the release version beside it, the author below. The logo is
+    // drawn in the text colour of the current theme (see `refresh_logo`).
     let head = BoxSizer::builder(Orientation::Horizontal).build();
+    let logo_height = (LOGO_WIDTH as f32 * LOGO_VIEW.1 / LOGO_VIEW.0).round() as i32;
     // StaticBitmap cannot exist without a bitmap: start with an empty one, `refresh_logo` draws the real logo
     let logo = StaticBitmap::builder(&panel).with_bitmap(Bitmap::from_rgba(&[0, 0, 0, 0], 1, 1)).build();
+    let version = StaticText::builder(&panel).with_label(&format!("v {VERSION}")).build();
+    let mut version_offset = 0;
+    if let Some(mut font) = version.get_font() {
+        font.set_point_size((font.get_point_size() - 1).max(8));
+        version.set_font(&font);
+        // the version's baseline sits on the bottom edge of the logo, i.e. on the letters' baseline
+        let (size, descent, _) = version.get_full_text_extent("v 0.1.51", Some(&font));
+        version_offset = baseline_offset(logo_height, size.height, descent);
+    }
+    let version_column = BoxSizer::builder(Orientation::Vertical).build();
+    version_column.add_spacer(version_offset);
+    version_column.add(&version, 0, SizerFlag::empty(), 0);
+    let logo_row = BoxSizer::builder(Orientation::Horizontal).build();
+    logo_row.add(&logo, 0, SizerFlag::empty(), 0);
+    logo_row.add_spacer(GAP);
+    logo_row.add_sizer(&version_column, 0, SizerFlag::empty(), 0);
     let titles = BoxSizer::builder(Orientation::Vertical).build();
     let subtitle = StaticText::builder(&panel).with_label("By Doc Snyder").build();
     titles.add_spacer(12); // air above the logo
-    titles.add(&logo, 0, SizerFlag::Bottom, 8);
+    titles.add_sizer(&logo_row, 0, SizerFlag::Bottom, 8);
     titles.add(&subtitle, 0, SizerFlag::empty(), 0);
     head.add_sizer(&titles, 1, SizerFlag::AlignCenterVertical, 0);
     // settings and theme buttons, top right
@@ -143,16 +172,13 @@ pub fn build(theme: Theme) {
     // progress and results stay hidden (no empty space) until first needed
     let gauge = Gauge::builder(&panel).with_range(100).build();
     root.add(&gauge, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom, PAD);
-    let results = TextCtrl::builder(&panel)
-        .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::ReadOnly)
-        .with_size(Size::new(-1, 160))
-        .build();
-    root.add(&results, 1, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom, PAD);
+    let results = ResultsView::new(&panel);
+    root.add(&results.panel, 1, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom, PAD);
     gauge.show(false);
-    results.show(false);
+    results.panel.show(false);
 
     let prefs = Prefs::load();
-    let first_run = prefs.is_unconfigured();
+    let first_run = prefs.needs_setup();
     radio_index.set_value(!prefs.on_the_fly);
     radio_fly.set_value(prefs.on_the_fly);
     let state = State {
@@ -163,8 +189,8 @@ pub fn build(theme: Theme) {
         gauge_shown: false,
         results_shown: false,
         theme,
-        logo_colour: String::new(),
         field_colour: source.get_background_color(),
+        logo_colour: String::new(),
     };
 
     let ui = Ui {
@@ -173,6 +199,7 @@ pub fn build(theme: Theme) {
         settings_button,
         theme_button,
         logo,
+        version,
         source,
         source_browse,
         source_clear,
@@ -188,13 +215,13 @@ pub fn build(theme: Theme) {
         state: Rc::new(RefCell::new(state)),
     };
     ui.connect();
-    ui.sync(); // also draws the logo
+    ui.sync();
 
     panel.set_sizer(root, true);
     frame.fit(); // size to content: the hidden gauge and results take no space
     let best = frame.get_size();
-    frame.set_size(Size::new(640, best.height));
-    frame.set_min_size(Size::new(520, best.height));
+    frame.set_size(Size::new(WINDOW_WIDTH, best.height));
+    frame.set_min_size(Size::new(MIN_WIDTH, best.height));
     frame.show(true);
     frame.centre();
 
@@ -217,6 +244,7 @@ impl Ui {
         let ui = self.clone();
         self.panel.on_size(move |event| {
             ui.refresh_caption();
+            ui.results.layout(ui.results_width());
             event.skip(true); // the panel's own layout must still run
         });
         let ui = self.clone();
@@ -325,8 +353,11 @@ impl Ui {
             self.source.set_value(&shown);
         }
         self.source.set_tooltip(&source.as_ref().map(|p| p.display().to_string()).unwrap_or_default());
+        // what a scan reads: the index in indexed mode, else the HVSC folder
         let tunes = if prefs.on_the_fly { prefs.hvsc.as_ref() } else { prefs.index.as_ref() };
-        let have_tunes = tunes.is_some();
+        // the HVSC folder is required in both modes; indexed mode also needs the index
+        let missing_setting = prefs.missing();
+        let have_tunes = missing_setting.is_none();
 
         self.source_clear.enable(idle && have_source);
         for control in [&self.source as &dyn WxWidget, &self.source_browse, &self.radio_index, &self.radio_fly, &self.settings_button] {
@@ -336,13 +367,13 @@ impl Ui {
         self.scan.enable(running || (have_source && have_tunes));
 
         // what is missing in normal text, what a scan will use in grey
-        let (text, missing) = match (running, have_tunes, have_source, prefs.on_the_fly) {
+        let (text, missing) = match (running, missing_setting, have_source, prefs.on_the_fly) {
             (true, ..) => (String::new(), false),
-            (_, false, _, true) => ("Select the HVSC folder in Settings".to_string(), true),
-            (_, false, _, false) => ("Select or build an index in Settings".to_string(), true),
-            (_, _, false, _) => ("Choose or drop a source file".to_string(), true),
-            (_, true, true, true) => (format!("Reading HVSC: {}", file_name(tunes.unwrap())), false),
-            (_, true, true, false) => (format!("Using index: {}", file_name(tunes.unwrap())), false),
+            (_, Some(Missing::Hvsc), ..) => ("Select the HVSC folder in Settings".to_string(), true),
+            (_, Some(Missing::Index), ..) => ("Select or build an index in Settings".to_string(), true),
+            (_, None, false, _) => ("Choose or drop a source file".to_string(), true),
+            (_, None, true, true) => (format!("Reading HVSC: {}", file_name(tunes.unwrap())), false),
+            (_, None, true, false) => (format!("Using index: {}", file_name(tunes.unwrap())), false),
         };
         let colour = SystemSettings::get_colour(if missing { SystemColour::WindowText } else { SystemColour::GrayText });
         self.info.show(missing);
@@ -351,23 +382,30 @@ impl Ui {
         self.status.set_tooltip(&tunes.map(|p| p.display().to_string()).unwrap_or_default());
         self.refresh_caption();
         self.refresh_logo();
+        self.refresh_version();
         self.panel.layout();
     }
 
     /// Draws the logo in the current text colour, when that changed since the last time.
     fn refresh_logo(&self) {
         let c = SystemSettings::get_colour(SystemColour::WindowText);
-        let colour = format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b);
-        if self.state.borrow().logo_colour == colour {
+        let ink = format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b);
+        if self.state.borrow().logo_colour == ink {
             return;
         }
-        // the SVG has no fill of its own (black by default); give its path one
-        let svg = LOGO_SVG.replacen("<path", &format!("<path fill=\"{colour}\""), 1);
-        let size = Size::new(LOGO_WIDTH, LOGO_HEIGHT);
-        if let Some(bitmap) = BitmapBundle::from_svg_text(&svg, size).and_then(|b| b.get_bitmap_for(&self.panel)) {
+        // the artwork has no fill of its own (black); give its path one
+        let svg = LOGO_SVG.replacen("<path", &format!("<path fill=\"{ink}\""), 1);
+        let height = (LOGO_WIDTH as f32 * LOGO_VIEW.1 / LOGO_VIEW.0).round() as i32;
+        if let Some(bitmap) = BitmapBundle::from_svg_text(&svg, Size::new(LOGO_WIDTH, height)).and_then(|b| b.get_bitmap_for(&self.panel)) {
             self.logo.set_bitmap(&bitmap);
-            self.state.borrow_mut().logo_colour = colour;
+            self.state.borrow_mut().logo_colour = ink;
         }
+    }
+
+    /// The version is a quiet detail: the system grey, pulled toward the window background.
+    fn refresh_version(&self) {
+        let background = self.panel.get_background_color();
+        self.version.set_foreground_color(mix(SystemSettings::get_colour(SystemColour::GrayText), background, VERSION_FADE));
     }
 
     /// Sets the full-path caption under the source field, cut in the middle to the width of
@@ -427,6 +465,9 @@ impl Ui {
         let (file, source, settings, on_the_fly) = {
             let st = self.state.borrow();
             let prefs = st.prefs.borrow();
+            if prefs.missing().is_some() {
+                return; // the button is disabled then; this keeps the rule in one place too
+            }
             let source = if prefs.on_the_fly { prefs.hvsc.clone().map(Source::Hvsc) } else { prefs.index.clone().map(Source::Index) };
             (st.source.clone(), source, st.settings.clone(), prefs.on_the_fly)
         };
@@ -435,10 +476,10 @@ impl Ui {
         if on_the_fly && !self.state.borrow().gauge_shown {
             self.state.borrow_mut().gauge_shown = true;
             self.gauge.show(true);
-            self.grow(36);
+            self.fit_height();
         }
         self.gauge.set_value(0);
-        self.results.set_value("");
+        self.results.clear();
         self.state.borrow_mut().job = Some(Job::scan(file, source, settings));
         self.timer.start(TICK_MS, false);
         self.sync();
@@ -456,32 +497,45 @@ impl Ui {
         self.timer.stop();
         self.state.borrow_mut().job = None;
         self.gauge.set_value(if result.is_ok() { 100 } else { 0 });
-        let text = match result {
-            Ok(Outcome::Scanned(found)) => found.iter().map(describe).collect::<Vec<_>>().join("\n"),
-            Ok(Outcome::Built { .. }) => String::new(), // index builds run in the settings window
-            Err(e) if e == CANCELLED => "Cancelled.".to_string(),
+        // the results area appears the first time there is something to show
+        if !self.state.borrow().results_shown {
+            self.state.borrow_mut().results_shown = true;
+            self.results.panel.show(true);
+        }
+        let width = self.results_width();
+        match result {
+            Ok(Outcome::Scanned(found)) => {
+                if let Some(first) = found.first() {
+                    self.results.show_found(first, width);
+                }
+            }
+            Ok(Outcome::Built { .. }) => {} // index builds run in the settings window
+            Err(e) if e == CANCELLED => self.results.show_message("Cancelled", "", width),
             Err(e) => {
                 let dialog = MessageDialog::builder(&self.frame, &e, TITLE)
                     .with_style(MessageDialogStyle::OK | MessageDialogStyle::IconError)
                     .build();
                 dialog.show_modal();
-                format!("Error: {e}")
+                self.results.show_message("Error", &e, width);
             }
-        };
-        if !self.state.borrow().results_shown {
-            self.state.borrow_mut().results_shown = true;
-            self.results.show(true);
-            self.grow(176);
         }
-        self.results.set_value(&text);
+        self.fit_height(); // the window takes the height its content needs, no more
         self.sync();
     }
 
-    /// Makes the window taller by `dy` when something that was hidden first appears.
-    fn grow(&self, dy: i32) {
+    /// The width the results view has inside the window.
+    fn results_width(&self) -> i32 {
+        self.panel.get_client_size().width - 2 * PAD
+    }
+
+    /// Sets the window's height to what its content needs (the width is left alone): it grows
+    /// when something appears and shrinks again for a shorter result. Never below the minimum.
+    fn fit_height(&self) {
         self.panel.layout();
-        let size = self.frame.get_size();
-        self.frame.set_size(Size::new(size.width, size.height + dy));
+        let width = self.frame.get_size().width;
+        self.frame.fit();
+        let height = self.frame.get_size().height;
+        self.frame.set_size(Size::new(width, height));
     }
 }
 
@@ -522,22 +576,6 @@ fn attach_drop<W: WxWidget>(ui: &Ui, window: &W) {
         .build();
 }
 
-/// One result block, in the same wording as the command line tool.
-fn describe(found: &Identification) -> String {
-    let name = file_name(&found.path);
-    if found.matches.is_empty() {
-        return format!(
-            "{name}\n   No match ({} distinct windows checked; {}).\n   The tune may be packed, relocated or not in HVSC.",
-            found.windows, found.emulation
-        );
-    }
-    let mut out = name;
-    for m in &found.matches {
-        out.push_str(&format!("\n   {:>5.1}% of tune data found, score {:>7.1}  /{}", 100.0 * m.share, m.score, m.name));
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -556,5 +594,18 @@ mod tests {
         let (dark, light) = (Colour::rgb(30, 30, 30), Colour::rgb(250, 250, 250));
         assert!(luma(readable(accent, dark)) > luma(accent) + 40.0, "must get clearly brighter on dark");
         assert_eq!(readable(accent, light).b, accent.b, "unchanged on light");
+    }
+}
+
+#[cfg(test)]
+mod logo_tests {
+    use super::*;
+
+    #[test]
+    fn the_logo_constants_match_the_artwork() {
+        let (w, h) = LOGO_VIEW;
+        assert!(LOGO_SVG.contains(&format!("viewBox=\"0 0 {w} {h}\"")), "LOGO_VIEW is out of date");
+        assert!(!LOGO_SVG.contains("<text"), "the logo must be shapes only");
+        assert!(LOGO_SVG.contains("<path"), "refresh_logo fills the first <path>");
     }
 }
