@@ -4,6 +4,9 @@ Finds which [HVSC](https://hvsc.c64.org/) tune is used in a C64 `.prg` file (a d
 [VICE](https://vice-emu.sourceforge.io/) snapshot (`.vsf`) of one that is running.
 It is a cross-platform alternative to Wilfred Bos's excellent [SID Known](https://csdb.dk/release/?id=262621).
 
+It comes in two forms that share the same matching code: a small **command line tool** (`sidfind`) and a
+**desktop app** (`sidfind-gui`) for those who prefer not to use a terminal.
+
 ## Motivation for this project
 
 SID Known by Wilfred Bos is excellent, but it is available for Windows only and is closed source.
@@ -31,7 +34,16 @@ Prebuilt binaries are attached to each [release](../../releases) (no Rust needed
 | macOS (Intel) | `sidfind-<version>-x86_64-apple-darwin.tar.gz` |
 
 Each archive contains the `sidfind` program, this README and the license. `SHA256SUMS.txt` lets you verify the downloads.
-SidFind is a command line tool: unpack it and run it from a terminal (see [Usage](#usage)).
+`sidfind` is a command line tool: unpack it and run it from a terminal (see [Usage](#usage)).
+
+The desktop app is a separate download:
+
+| Platform | File |
+|---|---|
+| Windows (64-bit) | `sidfind-gui-<version>-x86_64-pc-windows-msvc.zip` |
+
+For now the desktop app is only offered as a prebuilt download for Windows. On macOS and Linux you can build it
+yourself (see [Building](#building)); it works there too, but there are no prebuilt archives yet.
 
 The binaries are not code-signed, so your OS may warn about them: on macOS run `xattr -d com.apple.quarantine sidfind`
 once if a browser-downloaded copy is blocked, and on Windows choose "More info" and then "Run anyway" in SmartScreen.
@@ -41,9 +53,38 @@ Or build it yourself, as described below.
 ## Usage
 
 You need a copy of HVSC (the folder that contains `DEMOS`, `GAMES` and `MUSICIANS`). Download it from
-<https://hvsc.c64.org/downloads>. There are two ways to use it, and you choose.
+<https://hvsc.c64.org/downloads>. You need it for every scan, with the desktop app and the command line tool alike.
 
-### Option 1: read HVSC on every run (no setup)
+### The desktop app
+
+Start `sidfind-gui` (no installation needed). Screenshots will follow.
+
+1. **First run:** the Settings window opens. Choose your **HVSC folder** (it has a link to the download page).
+   Settings are saved and remembered the next time. You can open them again with the gear icon.
+2. **Choose the file to examine:** click **Browse**, or drag a `.prg` or `.vsf` file onto the window. The trash icon
+   clears it.
+3. **Choose how to scan** (next to the file, on the main window):
+   - *On the fly*: reads HVSC for every scan. It needs no preparation and takes a few seconds (a progress bar shows it).
+   - *Indexed*: much faster (a fraction of a second), but it needs an index file, which you build once in Settings
+     with **Build index** (about 170 MB of disk space; the same index as the command line tool's, see
+     [Option 2](#option-2-build-an-index-once-optional-about-170-mb-of-disk-space)). Rebuild it after you update HVSC.
+4. Press **Find SID**. The best matches are listed with a bar, a percentage of the tune that was found, the tune's
+   path in HVSC and a score. See [Reading the output](#reading-the-output) for what these mean, and check a match
+   manually.
+
+The half-circle icon opens the **Appearance** menu: follow the system, light or dark (on Windows a change applies the
+next time the app starts).
+
+The app and the command line tool use the same matching code and give the same results. Their settings are
+separate, but both understand `SIDFIND_HVSC` and `SIDFIND_INDEX` (see
+[Environment variables](#environment-variables)): the app uses them when nothing has been saved in Settings, and a saved
+setting wins over them.
+
+### The command line tool
+
+There are two ways to use it, and you choose.
+
+#### Option 1: read HVSC on every run (no setup)
 
 ```sh
 sidfind --hvsc /path/to/C64Music demo.prg [more.prg ...]
@@ -53,7 +94,7 @@ This needs no preparation and always uses the HVSC you point it at. It takes abo
 laptop (a run with 16 PRGs took about 7 seconds). Several PRGs in one run share a single pass over HVSC, so that is
 faster than running the tool once per file.
 
-### Option 2: build an index once (optional, about 170 MB of disk space)
+#### Option 2: build an index once (optional, about 170 MB of disk space)
 
 ```sh
 sidfind --build-index hvsc.idx --hvsc /path/to/C64Music      # once, about 5 seconds
@@ -117,8 +158,11 @@ Always check a match manually, as with SID Known.
 
 ## Building
 
-SidFind is written in Rust, has no dependencies besides the standard library, and builds the same way on
-every platform. You need Rust 1.85 or newer (the project uses the 2024 edition).
+SidFind is written in Rust. The command line tool and the matching code (`sidfind-core`) have no dependencies besides
+the standard library and build the same way on every platform. The desktop app uses
+[wxDragon](https://github.com/AllenDang/wxDragon) (wxWidgets for Rust) for native windows, which needs a C++ toolchain
+and CMake and builds wxWidgets on the first build. For that reason a plain `cargo build` builds the command line tool
+only. You need Rust 1.85 or newer (the project uses the 2024 edition).
 
 ### 1. Install Rust
 
@@ -145,8 +189,26 @@ The binary is written to:
 | macOS, Linux | `target/release/sidfind` |
 | Windows | `target\release\sidfind.exe` |
 
-Copy it anywhere on your `PATH`, or run `cargo install --path .` to install it into `~/.cargo/bin`
+Copy it anywhere on your `PATH`, or run `cargo install --path crates/sidfind-cli` to install it into `~/.cargo/bin`
 (`%USERPROFILE%\.cargo\bin` on Windows).
+
+### 3. Build the desktop app (optional)
+
+In addition to Rust you need CMake and a C++ toolchain:
+
+| OS | Extra requirements |
+|---|---|
+| **macOS** | Command line tools (as above) and CMake, e.g. `brew install cmake` |
+| **Linux** | GTK 3 development files and CMake, e.g. `sudo apt install build-essential cmake pkg-config libgtk-3-dev` (more packages may be needed on your distribution) |
+| **Windows** | The Visual Studio C++ Build Tools (as above, with the Windows SDK) and CMake |
+
+```sh
+cargo build --release -p sidfind-gui
+```
+
+The first build takes a few minutes because it compiles wxWidgets; later builds are fast. The program is written to
+`target/release/sidfind-gui` (`target\release\sidfind-gui.exe` on Windows). It has been tried by the author on macOS
+and checked in CI on Windows and Linux (the Linux build is new and has seen the least use).
 
 ### Building for another OS
 
@@ -201,6 +263,14 @@ RAM of a machine that has run, so the demo is unpacked. That RAM is used as it i
   less than from the PRG, e.g. 89% instead of 100%) and the KERNAL's and the screen's memory.
 
 ## Changelog
+
+### Unreleased
+
+- New desktop app, `sidfind-gui`, with native windows on macOS, Windows and Linux: drag and drop a PRG or VICE
+  snapshot, scan on the fly or with an index, build the index from a settings window, light and dark appearance.
+- The repository is now a Cargo workspace: the matching code moved into the `sidfind-core` library, shared by the
+  command line tool (`sidfind-cli`) and the app. The command line tool behaves as before (same output, same index
+  format).
 
 ### 0.1.51 (2026-11-04)
 - Bugfix (missing source file)

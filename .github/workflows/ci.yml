@@ -37,11 +37,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest]
+        os: [windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+
+      # wxWidgets on Linux is the GTK3 port; these are the headers it is built against
+      - name: Install GTK3 development packages (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake pkg-config libgtk-3-dev libxkbcommon-dev libxtst-dev libclang-dev
+
       - uses: Swatinem/rust-cache@v2
         with:
           key: gui
@@ -55,6 +64,11 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path dist | Out-Null
           Copy-Item target/release/sidfind-gui.exe dist/
+      - name: Collect the build (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir dist
+          cp target/release/sidfind-gui dist/
       - uses: actions/upload-artifact@v4
         with:
           name: sidfind-gui-${{ runner.os }}-dev-build
