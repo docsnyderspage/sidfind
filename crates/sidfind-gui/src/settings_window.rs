@@ -10,7 +10,7 @@ use wxdragon::prelude::*;
 
 use crate::job::{Job, Outcome};
 use crate::prefs::Prefs;
-use crate::widgets::{PathSetting, GAP, PAD, TITLE};
+use crate::widgets::{GAP, PAD, PathSetting, TITLE, headline, hyperlink};
 
 const TICK_MS: i32 = 100;
 /// Where to get the HVSC collection.
@@ -43,8 +43,17 @@ pub fn show(parent: &Frame, prefs: &Rc<RefCell<Prefs>>) {
     let panel = Panel::builder(&dialog).build();
     let root = BoxSizer::builder(Orientation::Vertical).build();
 
-    let (hvsc, hvsc_cell) = PathSetting::new(&panel, "HVSC folder (required)", "", Some(("Download the HVSC collection", HVSC_DOWNLOAD_URL)), "Clear HVSC folder");
-    let (index, index_cell) = PathSetting::new(&panel, "Index file", "Allows for faster searches. Build it once from the HVSC folder.", None, "Clear index file");
+    root.add(&headline(&panel, "Settings"), 0, SizerFlag::Left | SizerFlag::Right | SizerFlag::Top, PAD);
+    root.add_spacer(SECTION_GAP);
+    let (hvsc, hvsc_cell) = PathSetting::new(
+        &panel,
+        "HVSC folder (required)",
+        "",
+        Some(("Download the HVSC collection", HVSC_DOWNLOAD_URL)),
+        "Clear HVSC folder",
+    );
+    let (index, index_cell) =
+        PathSetting::new(&panel, "Index file", "Allows for faster searches. Build it once from the HVSC folder.", None, "Clear index file");
     root.add_sizer(&hvsc_cell, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top, PAD);
     root.add_spacer(SECTION_GAP);
     root.add_sizer(&index_cell, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right, PAD);
@@ -70,7 +79,7 @@ pub fn show(parent: &Frame, prefs: &Rc<RefCell<Prefs>>) {
     root.add_stretch_spacer(1);
     let close = Button::builder(&panel).with_label("Close").build();
     // the project page: opens in the default browser (the URL comes from Cargo.toml)
-    let link = HyperlinkCtrl::builder(&panel).with_label("SidFind on GitHub").with_url(env!("CARGO_PKG_REPOSITORY")).build();
+    let link = hyperlink(&panel, "SidFind on GitHub", env!("CARGO_PKG_REPOSITORY"));
     let close_row = BoxSizer::builder(Orientation::Horizontal).build();
     close_row.add(&link, 0, SizerFlag::AlignCenterVertical, 0);
     close_row.add_stretch_spacer(1);

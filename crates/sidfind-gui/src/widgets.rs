@@ -106,6 +106,33 @@ pub fn square(window: &dyn WxWidget, side: i32) {
     window.set_min_size(Size::new(side, side));
 }
 
+/// Makes a label bold (the look of a section label).
+pub fn make_bold(text: &StaticText) {
+    if let Some(mut font) = text.get_font() {
+        font.make_bold();
+        text.set_font(&font);
+    }
+}
+
+/// A link that opens `url` in the browser. Its hover colour is the window text colour (white in
+/// dark mode), not the platform default, which is red on macOS dark mode.
+pub fn hyperlink(panel: &Panel, text: &str, url: &str) -> HyperlinkCtrl {
+    let link = HyperlinkCtrl::builder(panel).with_label(text).with_url(url).build();
+    link.set_hover_colour(SystemSettings::get_colour(SystemColour::WindowText));
+    link
+}
+
+/// A headline: bold and a few points larger than the text around it.
+pub fn headline(panel: &Panel, text: &str) -> StaticText {
+    let label = StaticText::builder(panel).with_label(text).build();
+    if let Some(mut font) = label.get_font() {
+        font.make_bold();
+        font.set_point_size(font.get_point_size() + 4);
+        label.set_font(&font);
+    }
+    label
+}
+
 /// A path setting: a Select/Change button, a trash icon and a grey caption with the path.
 #[derive(Clone, Copy)]
 pub struct PathSetting {
@@ -121,6 +148,7 @@ impl PathSetting {
     /// on its own line below it; the button follows.
     pub fn new(panel: &Panel, label: &str, description: &str, link: Option<(&str, &str)>, clear_tip: &str) -> (PathSetting, BoxSizer) {
         let label = StaticText::builder(panel).with_label(label).build();
+        make_bold(&label);
         let button = Button::builder(panel).with_label("Select...").build();
         let clear = trash_button(panel, clear_tip);
         square(&clear, button.get_best_size().height);
@@ -134,7 +162,7 @@ impl PathSetting {
         header.add(&label, 0, SizerFlag::AlignCenterVertical, 0);
         header.add_stretch_spacer(1);
         if let Some((text, url)) = link {
-            let link = HyperlinkCtrl::builder(panel).with_label(text).with_url(url).build();
+            let link = hyperlink(panel, text, url);
             header.add(&link, 0, SizerFlag::AlignCenterVertical, 0);
         }
         let below_header = if description.is_empty() { 6 } else { 2 };

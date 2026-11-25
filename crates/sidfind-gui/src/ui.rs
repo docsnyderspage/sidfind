@@ -87,6 +87,13 @@ struct Ui {
 
 pub fn build(theme: Theme) {
     let frame = Frame::builder().with_title(TITLE).with_size(Size::new(WINDOW_WIDTH, 640)).build();
+    // macOS quits with Cmd-Q through the Quit item that wxWidgets moves into the application
+    // menu from this File menu; without a menu bar there is no such item.
+    #[cfg(target_os = "macos")]
+    {
+        let file = Menu::builder().append_item(ID_EXIT, "Quit SidFind\tCtrl+Q", "").build();
+        frame.set_menu_bar(MenuBar::builder().append(file, "File").build());
+    }
     let panel = Panel::builder(&frame).build();
     let root = BoxSizer::builder(Orientation::Vertical).build();
 
@@ -226,11 +233,12 @@ pub fn build(theme: Theme) {
     ui.sync();
 
     panel.set_sizer(root, true);
-    frame.fit(); // size to content: the hidden gauge and results take no space
-    let best = frame.get_size();
-    frame.set_size(Size::new(WINDOW_WIDTH, best.height));
-    frame.set_min_size(Size::new(MIN_WIDTH, best.height));
     frame.show(true);
+    // size to content only once the window is shown: the title bar height is only known then.
+    // Sizing before that made the window too short, and the bottom row (status and Find SID)
+    // was cut off ("Negative content height" in GTK).
+    ui.fit_height();
+    frame.set_min_size(Size::new(MIN_WIDTH, frame.get_size().height));
     frame.centre();
 
     if first_run {
@@ -289,7 +297,7 @@ impl Ui {
         let ui = self.clone();
         self.theme_button.on_mouse_left_up(move |_| ui.show_theme_menu());
         let ui = self.clone();
-        self.frame.on_menu_selected(move |event| ui.on_theme_chosen(event.get_id()));
+        self.frame.on_menu_selected(move |event| ui.on_menu(event.get_id()));
 
         let ui = self.clone();
         self.scan.on_click(move |_| ui.on_scan());
@@ -447,6 +455,14 @@ impl Ui {
             .build();
         menu.check_item(current, true);
         self.theme_button.popup_menu(&mut menu, None);
+    }
+
+    fn on_menu(&self, id: i32) {
+        if id == ID_EXIT {
+            self.frame.close(false);
+        } else {
+            self.on_theme_chosen(id);
+        }
     }
 
     fn on_theme_chosen(&self, id: i32) {
