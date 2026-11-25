@@ -9,6 +9,7 @@ use sidfind_core::{Identification, ScanSettings, Source};
 use wxdragon::prelude::*;
 
 use crate::job::{Job, Kind, Outcome};
+use crate::theme::{self, Applied, Theme};
 
 const PAD: i32 = 12;
 /// Indent of the path captions: lines them up with the text inside the field and buttons.
@@ -16,6 +17,16 @@ const CAPTION_INSET: i32 = 6;
 const TITLE: &str = "SidFind";
 /// Poll interval for the running job, in milliseconds.
 const TICK_MS: i32 = 100;
+// ids of the entries of the theme menu
+/// The wordmark with its text converted to outlines (assets/logo-outlined.svg), so it needs
+/// no font; the original assets/logo.svg uses live text.
+const LOGO_SVG: &str = include_str!("../../../assets/logo-outlined.svg");
+/// Logical size in the header, keeping the aspect ratio of the SVG (163.65 x 31.81).
+const LOGO_HEIGHT: i32 = 40;
+const LOGO_WIDTH: i32 = LOGO_HEIGHT * 16365 / 3181;
+const ID_THEME_SYSTEM: i32 = 7001;
+const ID_THEME_LIGHT: i32 = 7002;
+const ID_THEME_DARK: i32 = 7003;
 
 struct State {
     /// The chosen PRG/VSF. The field only shows its file name, so the full path lives here.
@@ -29,6 +40,9 @@ struct State {
     job: Option<Job>,
     gauge_shown: bool,
     results_shown: bool,
+    theme: Theme,
+    /// Colour the logo was last drawn in, so it is only rendered again when it changes.
+    logo_colour: String,
 }
 
 /// A secondary path setting: a Select/Change button, a trash icon and a caption with the path.
@@ -51,6 +65,8 @@ impl Setting {
 struct Ui {
     frame: Frame,
     panel: Panel,
+    theme_button: BitmapButton,
+    logo: StaticBitmap,
     source: TextCtrl,
     source_browse: Button,
     source_clear: BitmapButton,
@@ -68,27 +84,27 @@ struct Ui {
     state: Rc<RefCell<State>>,
 }
 
-pub fn build(app: &App) {
-    app.set_app_name(TITLE); // decides the per-user data folder
+pub fn build(theme: Theme) {
     let frame = Frame::builder().with_title(TITLE).with_size(Size::new(640, 640)).build();
     let panel = Panel::builder(&frame).build();
     let root = BoxSizer::builder(Orientation::Vertical).build();
 
-    // header: logo + title/subtitle
+    // header: the wordmark over the subtitle. The logo is drawn in the text colour of the
+    // current theme (see `refresh_logo`), so it is visible on light and dark backgrounds.
     let head = BoxSizer::builder(Orientation::Horizontal).build();
-    let logo = StaticBitmap::builder(&panel).with_bitmap(Some(placeholder_logo())).build();
+    // StaticBitmap cannot exist without a bitmap: start with an empty one, `refresh_logo` draws the real logo
+    let logo = StaticBitmap::builder(&panel).with_bitmap(Bitmap::from_rgba(&[0, 0, 0, 0], 1, 1)).build();
     let titles = BoxSizer::builder(Orientation::Vertical).build();
-    let title = StaticText::builder(&panel).with_label(TITLE).build();
-    if let Some(mut font) = title.get_font() {
-        font.make_bold();
-        font.set_point_size(font.get_point_size() + 7);
-        title.set_font(&font);
-    }
-    let subtitle = StaticText::builder(&panel).with_label("Find which HVSC tune a C64 program uses").build();
-    titles.add(&title, 0, SizerFlag::Bottom, 2);
+    let subtitle = StaticText::builder(&panel).with_label("By Doc Snyder").build();
+    titles.add_spacer(12); // air above the logo
+    titles.add(&logo, 0, SizerFlag::Bottom, 8);
     titles.add(&subtitle, 0, SizerFlag::empty(), 0);
-    head.add(&logo, 0, SizerFlag::Right, PAD);
     head.add_sizer(&titles, 1, SizerFlag::AlignCenterVertical, 0);
+    // theme menu button, top right
+    let theme_icon = BitmapBundle::from_svg_text(THEME_SVG, Size::new(20, 20)).and_then(|b| b.get_bitmap_for(&panel));
+    let theme_button = BitmapButton::builder(&panel).with_bitmap(theme_icon).build();
+    theme_button.set_tooltip("Appearance");
+    head.add(&theme_button, 0, SizerFlag::empty(), 0);
     root.add_sizer(&head, 0, SizerFlag::Expand | SizerFlag::All, PAD);
 
     // The trash icon is an inline SVG: crisp at any scale, no font or image files. It is drawn
@@ -150,7 +166,8 @@ pub fn build(app: &App) {
     let actions = BoxSizer::builder(Orientation::Horizontal).build();
     let build = Button::builder(&panel).with_label("Build index...").build();
     let hint = StaticText::builder(&panel).with_label(" ").build();
-    hint.set_foreground_color(SystemSettings::get_colour(SystemColour::GrayText));
+    // normal text colour, not the grey of the captions: the hint explains why Scan is disabled
+    // and must be noticed
     let scan = Button::builder(&panel).with_label("Scan").build();
     actions.add(&build, 0, SizerFlag::AlignCenterVertical, 0);
     actions.add_stretch_spacer(1);
@@ -180,6 +197,8 @@ pub fn build(app: &App) {
         job: None,
         gauge_shown: false,
         results_shown: false,
+        theme,
+        logo_colour: String::new(),
     };
     radio_index.set_value(!state.on_the_fly);
     radio_fly.set_value(state.on_the_fly);
@@ -187,6 +206,8 @@ pub fn build(app: &App) {
     let ui = Ui {
         frame,
         panel,
+        theme_button,
+        logo,
         source,
         source_browse,
         source_clear,
@@ -204,7 +225,7 @@ pub fn build(app: &App) {
         state: Rc::new(RefCell::new(state)),
     };
     ui.connect();
-    ui.sync();
+    ui.sync(); // also draws the logo
 
     panel.set_sizer(root, true);
     frame.fit(); // size to content: the hidden gauge and results take no space
@@ -288,6 +309,16 @@ impl Ui {
         });
 
         let ui = self.clone();
+        self.frame.on_activate(move |event| {
+            ui.sync(); // the system theme may have changed while the window was in the background
+            event.skip(true);
+        });
+        let ui = self.clone();
+        self.theme_button.on_click(move |_| ui.show_theme_menu());
+        let ui = self.clone();
+        self.frame.on_menu_selected(move |event| ui.on_theme_chosen(event.get_id()));
+
+        let ui = self.clone();
         self.build.on_click(move |_| ui.on_build());
         let ui = self.clone();
         self.scan.on_click(move |_| ui.on_scan());
@@ -331,7 +362,24 @@ impl Ui {
         };
         self.hint.set_label(if hint.is_empty() { " " } else { hint });
         self.refresh_captions();
+        self.refresh_logo();
         self.panel.layout();
+    }
+
+    /// Draws the logo in the current text colour, when that changed since the last time.
+    fn refresh_logo(&self) {
+        let c = SystemSettings::get_colour(SystemColour::WindowText);
+        let colour = format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b);
+        if self.state.borrow().logo_colour == colour {
+            return;
+        }
+        // the SVG has no fill of its own (black by default); give its path one
+        let svg = LOGO_SVG.replacen("<path", &format!("<path fill=\"{colour}\""), 1);
+        let size = Size::new(LOGO_WIDTH, LOGO_HEIGHT);
+        if let Some(bitmap) = BitmapBundle::from_svg_text(&svg, size).and_then(|b| b.get_bitmap_for(&self.panel)) {
+            self.logo.set_bitmap(&bitmap);
+            self.state.borrow_mut().logo_colour = colour;
+        }
     }
 
     /// Sets the path captions, each cut in the middle to fit the width it has.
@@ -340,13 +388,61 @@ impl Ui {
             let st = self.state.borrow();
             (st.source.clone(), st.hvsc.clone(), st.index.clone())
         };
+        // Each caption is at most as wide as the control above it: the field, or the button
+        // (without its trash icon). The panel size event fires before the sizer has laid out
+        // the children, so work from the panel width and the controls that have a fixed width.
+        const GAP: i32 = 8; // between a field/button and the icons beside it
         let panel = self.panel.get_client_size().width;
-        let full = (panel - 2 * PAD - CAPTION_INSET).max(60);
-        let half = ((panel - 3 * PAD) / 2 - CAPTION_INSET).max(60); // the two settings share a row
+        let field = panel - 2 * PAD - self.source_browse.get_size().width - self.source_clear.get_size().width - 2 * GAP;
+        let button = (panel - 3 * PAD) / 2 - self.hvsc.clear.get_size().width - GAP;
+        let full = (field - CAPTION_INSET).max(60);
+        let half = (button - CAPTION_INSET).max(60);
         let text = |p: &Option<PathBuf>| p.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
+        let grey = SystemSettings::get_colour(SystemColour::GrayText);
+        for caption in [&self.source_caption, &self.hvsc.caption, &self.index.caption] {
+            caption.set_foreground_color(grey);
+        }
         self.source_caption.set_label(&fit(&self.source_caption, &text(&source), full));
         self.hvsc.caption.set_label(&fit(&self.hvsc.caption, &text(&hvsc), half));
         self.index.caption.set_label(&fit(&self.index.caption, &text(&index), half));
+    }
+
+    fn show_theme_menu(&self) {
+        let current = match self.state.borrow().theme {
+            Theme::System => ID_THEME_SYSTEM,
+            Theme::Light => ID_THEME_LIGHT,
+            Theme::Dark => ID_THEME_DARK,
+        };
+        let mut menu = Menu::builder()
+            .append_radio_item(ID_THEME_SYSTEM, "Follow system", "")
+            .append_radio_item(ID_THEME_LIGHT, "Light", "")
+            .append_radio_item(ID_THEME_DARK, "Dark", "")
+            .build();
+        menu.check_item(current, true);
+        self.theme_button.popup_menu(&mut menu, None);
+    }
+
+    fn on_theme_chosen(&self, id: i32) {
+        let chosen = match id {
+            ID_THEME_SYSTEM => Theme::System,
+            ID_THEME_LIGHT => Theme::Light,
+            ID_THEME_DARK => Theme::Dark,
+            _ => return,
+        };
+        self.state.borrow_mut().theme = chosen;
+        theme::save(chosen);
+        let note = match theme::apply_now(chosen) {
+            Applied::Now => None,
+            Applied::OnRestart => Some("The theme changes the next time SidFind starts."),
+            Applied::Unsupported => Some("This system does not allow changing the theme from SidFind."),
+        };
+        if let Some(note) = note {
+            let dialog = MessageDialog::builder(&self.frame, note, TITLE)
+                .with_style(MessageDialogStyle::OK | MessageDialogStyle::IconInformation)
+                .build();
+            dialog.show_modal();
+        }
+        self.sync(); // refreshes the caption colours, which are fixed at the time they are set
     }
 
     fn on_build(&self) {
@@ -524,21 +620,12 @@ fn shorten(path: &str, max: usize) -> String {
     format!("{}...{}", c[..head].iter().collect::<String>(), c[c.len() - tail..].iter().collect::<String>())
 }
 
+/// Half-filled circle ("appearance"), same grey as the trash icon.
+const THEME_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="#8e8e93"/></svg>"##;
+
 /// Trash-can icon as inline SVG. Mid-grey reads on both light and dark backgrounds.
 fn trash_svg(opacity: f32) -> String {
     format!(
         r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-opacity="{opacity}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 10v6M14 10v6"/></svg>"##
     )
-}
-
-/// Placeholder until the real logo (assets/logo.svg) exists: 64x64 gradient, raw RGBA.
-fn placeholder_logo() -> Bitmap {
-    let (w, h) = (64u32, 64u32);
-    let mut px = Vec::with_capacity((w * h * 4) as usize);
-    for y in 0..h {
-        for x in 0..w {
-            px.extend_from_slice(&[(x * 4) as u8, (y * 4) as u8, 160, 255]);
-        }
-    }
-    Bitmap::from_rgba(&px, w, h).expect("bitmap")
 }
