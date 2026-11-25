@@ -1,0 +1,9 @@
+[package]
+name = "sidfind"
+description = "Find which HVSC tune is used in a C64 .prg file or VICE snapshot"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+sidfind-core = { path = "../sidfind-core" }

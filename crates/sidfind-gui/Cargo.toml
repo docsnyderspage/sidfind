@@ -1,0 +1,16 @@
+[package]
+name = "sidfind-gui"
+description = "Native desktop GUI for sidfind"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "sidfind-gui"
+path = "src/main.rs"
+
+[dependencies]
+sidfind-core = { path = "../sidfind-core" }
+# Native widgets via wxWidgets. Default features (printing, TIFF/JPEG, regex, ...) are not
+# needed and cost about 1.8 MB.
+wxdragon = { version = "0.9.25", default-features = false }

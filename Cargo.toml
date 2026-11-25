@@ -1,7 +1,11 @@
-[package]
-name = "sidfind"
+[workspace]
+resolver = "3"
+members = ["crates/sidfind-core", "crates/sidfind-cli", "crates/sidfind-gui"]
+# a plain `cargo build` / `cargo test` covers the dependency-free crates only; the GUI needs
+# a C++ toolchain and CMake, so build it explicitly with `cargo build -p sidfind-gui`
+default-members = ["crates/sidfind-core", "crates/sidfind-cli"]
+
+[workspace.package]
 version = "0.1.51"
 edition = "2024"
 license = "MIT"
-
-[dependencies]
