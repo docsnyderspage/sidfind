@@ -12,12 +12,6 @@ use sidfind_core::{
     DEFAULT_WINDOW,
 };
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Kind {
-    Build,
-    Scan,
-}
-
 pub enum Outcome {
     Built { path: PathBuf, summary: IndexSummary },
     Scanned(Vec<Identification>),
@@ -26,7 +20,6 @@ pub enum Outcome {
 pub type JobResult = Result<Outcome, String>;
 
 pub struct Job {
-    pub kind: Kind,
     cancel: Arc<AtomicBool>,
     done: Arc<AtomicUsize>,
     total: Arc<AtomicUsize>,
@@ -34,9 +27,8 @@ pub struct Job {
 }
 
 impl Job {
-    fn spawn(kind: Kind, work: impl FnOnce(&Control) -> JobResult + Send + 'static) -> Job {
+    fn spawn(work: impl FnOnce(&Control) -> JobResult + Send + 'static) -> Job {
         let job = Job {
-            kind,
             cancel: Arc::new(AtomicBool::new(false)),
             done: Arc::new(AtomicUsize::new(0)),
             total: Arc::new(AtomicUsize::new(0)),
@@ -58,7 +50,7 @@ impl Job {
 
     /// Builds an index of `hvsc` into `out`.
     pub fn build(hvsc: PathBuf, out: PathBuf) -> Job {
-        Job::spawn(Kind::Build, move |ctl| {
+        Job::spawn(move |ctl| {
             let params = Params { window: DEFAULT_WINDOW, sampling: DEFAULT_INDEX_SAMPLING };
             let summary = build_index(&hvsc, &out, params, ctl)?;
             Ok(Outcome::Built { path: out, summary })
@@ -67,7 +59,7 @@ impl Job {
 
     /// Identifies `file` against `source`.
     pub fn scan(file: PathBuf, source: Source, settings: ScanSettings) -> Job {
-        Job::spawn(Kind::Scan, move |ctl| identify(&[file], &source, &settings, ctl).map(Outcome::Scanned))
+        Job::spawn(move |ctl| identify(&[file], &source, &settings, ctl).map(Outcome::Scanned))
     }
 
     pub fn cancel(&self) {

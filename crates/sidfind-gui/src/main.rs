@@ -4,8 +4,11 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod job;
+mod prefs;
+mod settings_window;
 mod theme;
 mod ui;
+mod widgets;
 
 fn main() {
     let _ = wxdragon::main(|app| {

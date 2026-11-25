@@ -1,29 +1,31 @@
 //! The main window. All state lives on the UI thread; background work goes through `job`.
+//! Everything that is set up once (HVSC folder, index file) lives in `settings_window`.
 
 use std::cell::RefCell;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use sidfind_core::api::CANCELLED;
 use sidfind_core::{Identification, ScanSettings, Source};
 use wxdragon::prelude::*;
 
-use crate::job::{Job, Kind, Outcome};
+use crate::job::{Job, Outcome};
+use crate::prefs::Prefs;
+use crate::settings_window;
 use crate::theme::{self, Applied, Theme};
+use crate::widgets::{self, file_name, fit, icon_button, indented, trash_button, GAP, GEAR_SVG, INFO_SVG, PAD, THEME_SVG, TITLE};
 
-const PAD: i32 = 12;
-/// Indent of the path captions: lines them up with the text inside the field and buttons.
-const CAPTION_INSET: i32 = 6;
-const TITLE: &str = "SidFind";
+/// Label of the main button.
+const FIND: &str = "Find SID";
 /// Poll interval for the running job, in milliseconds.
 const TICK_MS: i32 = 100;
-// ids of the entries of the theme menu
 /// The wordmark with its text converted to outlines (assets/logo-outlined.svg), so it needs
 /// no font; the original assets/logo.svg uses live text.
 const LOGO_SVG: &str = include_str!("../../../assets/logo-outlined.svg");
 /// Logical size in the header, keeping the aspect ratio of the SVG (163.65 x 31.81).
 const LOGO_HEIGHT: i32 = 40;
 const LOGO_WIDTH: i32 = LOGO_HEIGHT * 16365 / 3181;
+// ids of the entries of the theme menu
 const ID_THEME_SYSTEM: i32 = 7001;
 const ID_THEME_LIGHT: i32 = 7002;
 const ID_THEME_DARK: i32 = 7003;
@@ -31,52 +33,36 @@ const ID_THEME_DARK: i32 = 7003;
 struct State {
     /// The chosen PRG/VSF. The field only shows its file name, so the full path lives here.
     source: Option<PathBuf>,
-    hvsc: Option<PathBuf>,
-    index: Option<PathBuf>,
-    /// Scan mode: true = on-the-fly (read HVSC), false = through the index.
-    on_the_fly: bool,
+    /// HVSC folder, index file and scan mode: saved between runs, edited in the settings window.
+    prefs: Rc<RefCell<Prefs>>,
     /// Held in the state so a later options window can edit it; v1 always uses the defaults.
     settings: ScanSettings,
+    /// The scan in progress, if any.
     job: Option<Job>,
     gauge_shown: bool,
     results_shown: bool,
     theme: Theme,
+    /// The source field's normal background, restored after a drop hover.
+    field_colour: Colour,
     /// Colour the logo was last drawn in, so it is only rendered again when it changes.
     logo_colour: String,
-}
-
-/// A secondary path setting: a Select/Change button, a trash icon and a caption with the path.
-#[derive(Clone, Copy)]
-struct Setting {
-    button: Button,
-    clear: BitmapButton,
-    caption: StaticText,
-}
-
-impl Setting {
-    fn show(&self, path: Option<&Path>, enabled: bool) {
-        self.button.set_label(if path.is_some() { "Change..." } else { "Select..." });
-        self.button.set_tooltip(&path.map(|p| p.display().to_string()).unwrap_or_default());
-        self.clear.enable(path.is_some() && enabled);
-    }
 }
 
 #[derive(Clone)]
 struct Ui {
     frame: Frame,
     panel: Panel,
+    settings_button: BitmapButton,
     theme_button: BitmapButton,
     logo: StaticBitmap,
     source: TextCtrl,
     source_browse: Button,
     source_clear: BitmapButton,
     source_caption: StaticText,
-    hvsc: Setting,
-    index: Setting,
     radio_index: RadioButton,
     radio_fly: RadioButton,
-    hint: StaticText,
-    build: Button,
+    info: StaticBitmap,
+    status: StaticText,
     scan: Button,
     gauge: Gauge,
     results: TextCtrl,
@@ -100,25 +86,12 @@ pub fn build(theme: Theme) {
     titles.add(&logo, 0, SizerFlag::Bottom, 8);
     titles.add(&subtitle, 0, SizerFlag::empty(), 0);
     head.add_sizer(&titles, 1, SizerFlag::AlignCenterVertical, 0);
-    // theme menu button, top right
-    let theme_icon = BitmapBundle::from_svg_text(THEME_SVG, Size::new(20, 20)).and_then(|b| b.get_bitmap_for(&panel));
-    let theme_button = BitmapButton::builder(&panel).with_bitmap(theme_icon).build();
-    theme_button.set_tooltip("Appearance");
+    // settings and theme buttons, top right
+    let settings_button = icon_button(&panel, GEAR_SVG, 20, "Settings");
+    let theme_button = icon_button(&panel, THEME_SVG, 20, "Appearance");
+    head.add(&settings_button, 0, SizerFlag::Right, GAP);
     head.add(&theme_button, 0, SizerFlag::empty(), 0);
     root.add_sizer(&head, 0, SizerFlag::Expand | SizerFlag::All, PAD);
-
-    // The trash icon is an inline SVG: crisp at any scale, no font or image files. It is drawn
-    // in a BitmapButton because a plain Button with an empty label ignores its bitmap on macOS.
-    let trash = BitmapBundle::from_svg_text(&trash_svg(1.0), Size::new(16, 16));
-    let trash_dim = BitmapBundle::from_svg_text(&trash_svg(0.3), Size::new(16, 16));
-    let icon_on = trash.as_ref().and_then(|b| b.get_bitmap_for(&panel));
-    let icon_off = trash_dim.as_ref().and_then(|b| b.get_bitmap_for(&panel));
-    let trash_button = |tip: &str| {
-        let b = BitmapButton::builder(&panel).with_bitmap(icon_on.clone()).with_bitmap_disabled(icon_off.clone()).build();
-        b.set_tooltip(tip);
-        b.enable(false);
-        b
-    };
 
     // primary action: the source file
     let source_label = StaticText::builder(&panel).with_label("Source file").build();
@@ -129,28 +102,19 @@ pub fn build(theme: Theme) {
     // display-only: shows the file name, the full path is the tooltip; set through Browse
     let source = TextCtrl::builder(&panel).with_style(TextCtrlStyle::ReadOnly).build();
     let source_browse = Button::builder(&panel).with_label("Browse...").build();
-    let source_clear = trash_button("Clear source file");
+    let source_clear = trash_button(&panel, "Clear source file");
     let source_row = BoxSizer::builder(Orientation::Horizontal).build();
     source_row.add(&source, 1, SizerFlag::Expand | SizerFlag::AlignCenterVertical, 0);
-    source_row.add(&source_browse, 0, SizerFlag::AlignCenterVertical | SizerFlag::Left, 8);
-    source_row.add(&source_clear, 0, SizerFlag::AlignCenterVertical | SizerFlag::Left, 8);
+    source_row.add(&source_browse, 0, SizerFlag::AlignCenterVertical | SizerFlag::Left, GAP);
+    source_row.add(&source_clear, 0, SizerFlag::AlignCenterVertical | SizerFlag::Left, GAP);
     root.add(&source_label, 0, SizerFlag::Left | SizerFlag::Right | SizerFlag::Top, PAD);
     root.add_spacer(6);
     root.add_sizer(&source_row, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right, PAD);
-    // full path under the field, like the captions of the HVSC and index settings
+    // full path under the field
     let source_caption = StaticText::builder(&panel).with_label(" ").build();
-    source_caption.set_foreground_color(SystemSettings::get_colour(SystemColour::GrayText));
     root.add_spacer(4);
     root.add_sizer(&indented(&source_caption), 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right, PAD);
     root.add_spacer(PAD);
-
-    // secondary settings share one row; no text fields, the button says Select.../Change...
-    let (hvsc, hvsc_cell) = setting_cell(&panel, "HVSC folder", &trash_button("Clear HVSC folder"));
-    let (index, index_cell) = setting_cell(&panel, "Index file", &trash_button("Clear index file"));
-    let settings_row = BoxSizer::builder(Orientation::Horizontal).build();
-    settings_row.add_sizer(&hvsc_cell, 1, SizerFlag::Expand | SizerFlag::Right, PAD);
-    settings_row.add_sizer(&index_cell, 1, SizerFlag::Expand, 0);
-    root.add_sizer(&settings_row, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom, PAD);
 
     // scan mode
     let mode = BoxSizer::builder(Orientation::Horizontal).build();
@@ -162,16 +126,17 @@ pub fn build(theme: Theme) {
     mode.add(&radio_fly, 0, SizerFlag::AlignCenterVertical, 0);
     root.add_sizer(&mode, 0, SizerFlag::Expand | SizerFlag::All, PAD);
 
-    // actions: Build index left, a hint on why Scan is disabled in the middle, Scan right
+    // actions: what a scan will use (or what is missing) on the left, Scan on the right
     let actions = BoxSizer::builder(Orientation::Horizontal).build();
-    let build = Button::builder(&panel).with_label("Build index...").build();
-    let hint = StaticText::builder(&panel).with_label(" ").build();
-    // normal text colour, not the grey of the captions: the hint explains why Scan is disabled
-    // and must be noticed
-    let scan = Button::builder(&panel).with_label("Scan").build();
-    actions.add(&build, 0, SizerFlag::AlignCenterVertical, 0);
-    actions.add_stretch_spacer(1);
-    actions.add(&hint, 0, SizerFlag::AlignCenterVertical | SizerFlag::Right, PAD);
+    // the info icon marks a hint (something is missing); it is hidden while the line is plain information
+    let info_icon = BitmapBundle::from_svg_text(INFO_SVG, Size::new(16, 16)).and_then(|b| b.get_bitmap_for(&panel));
+    let info = StaticBitmap::builder(&panel).with_bitmap(info_icon).build();
+    let status = StaticText::builder(&panel).with_label(" ").build();
+    // the main action: the default button, which the system draws emphasised, and a bit larger
+    let scan = Button::builder(&panel).with_label(FIND).with_size(Size::new(110, 36)).build();
+    scan.set_default();
+    actions.add(&info, 0, SizerFlag::AlignCenterVertical | SizerFlag::Right, 6);
+    actions.add(&status, 1, SizerFlag::AlignCenterVertical | SizerFlag::Right, PAD);
     actions.add(&scan, 0, SizerFlag::AlignCenterVertical, 0);
     root.add_sizer(&actions, 0, SizerFlag::Expand | SizerFlag::All, PAD);
 
@@ -186,38 +151,36 @@ pub fn build(theme: Theme) {
     gauge.show(false);
     results.show(false);
 
-    let env = |name| std::env::var_os(name).map(PathBuf::from);
-    let (env_hvsc, env_index) = (env("SIDFIND_HVSC"), env("SIDFIND_INDEX"));
+    let prefs = Prefs::load();
+    let first_run = prefs.is_unconfigured();
+    radio_index.set_value(!prefs.on_the_fly);
+    radio_fly.set_value(prefs.on_the_fly);
     let state = State {
         source: None,
-        on_the_fly: env_index.is_none() && env_hvsc.is_some(),
-        hvsc: env_hvsc,
-        index: env_index,
+        prefs: Rc::new(RefCell::new(prefs)),
         settings: ScanSettings::default(),
         job: None,
         gauge_shown: false,
         results_shown: false,
         theme,
         logo_colour: String::new(),
+        field_colour: source.get_background_color(),
     };
-    radio_index.set_value(!state.on_the_fly);
-    radio_fly.set_value(state.on_the_fly);
 
     let ui = Ui {
         frame,
         panel,
+        settings_button,
         theme_button,
         logo,
         source,
         source_browse,
         source_clear,
         source_caption,
-        hvsc,
-        index,
         radio_index,
         radio_fly,
-        hint,
-        build,
+        info,
+        status,
         scan,
         gauge,
         results,
@@ -234,6 +197,15 @@ pub fn build(theme: Theme) {
     frame.set_min_size(Size::new(520, best.height));
     frame.show(true);
     frame.centre();
+
+    if first_run {
+        // nothing to scan with yet: open the settings once the window is up
+        let opener = Timer::new(&frame);
+        let ui = ui.clone();
+        opener.on_tick(move |_| ui.open_settings());
+        opener.start(300, true);
+        std::mem::forget(opener); // Drop would destroy it before it fires; it lives as long as the app
+    }
 }
 
 impl Ui {
@@ -241,10 +213,10 @@ impl Ui {
         let ui = self.clone();
         self.timer.on_tick(move |_| ui.tick());
 
-        // the captions are cut to the available width, so redo them when the window is resized
+        // the caption is cut to the available width, so redo it when the window is resized
         let ui = self.clone();
         self.panel.on_size(move |event| {
-            ui.refresh_captions();
+            ui.refresh_caption();
             event.skip(true); // the panel's own layout must still run
         });
         let ui = self.clone();
@@ -267,46 +239,9 @@ impl Ui {
         });
 
         let ui = self.clone();
-        self.hvsc.button.on_click(move |_| {
-            let dialog = DirDialog::builder(&ui.frame, "Select the HVSC folder", "").build();
-            if dialog.show_modal() == ID_OK {
-                ui.state.borrow_mut().hvsc = dialog.get_path().map(PathBuf::from);
-                ui.sync();
-            }
-        });
+        self.radio_index.on_selected(move |_| ui.set_mode(false));
         let ui = self.clone();
-        self.hvsc.clear.on_click(move |_| {
-            ui.state.borrow_mut().hvsc = None;
-            ui.sync();
-        });
-
-        let ui = self.clone();
-        self.index.button.on_click(move |_| {
-            let dialog = FileDialog::builder(&ui.frame)
-                .with_message("Select the index file")
-                .with_wildcard("Index files|*.idx|All files|*")
-                .build();
-            if dialog.show_modal() == ID_OK {
-                ui.state.borrow_mut().index = dialog.get_path().map(PathBuf::from);
-                ui.sync();
-            }
-        });
-        let ui = self.clone();
-        self.index.clear.on_click(move |_| {
-            ui.state.borrow_mut().index = None;
-            ui.sync();
-        });
-
-        let ui = self.clone();
-        self.radio_index.on_selected(move |_| {
-            ui.state.borrow_mut().on_the_fly = false;
-            ui.sync();
-        });
-        let ui = self.clone();
-        self.radio_fly.on_selected(move |_| {
-            ui.state.borrow_mut().on_the_fly = true;
-            ui.sync();
-        });
+        self.radio_fly.on_selected(move |_| ui.set_mode(true));
 
         let ui = self.clone();
         self.frame.on_activate(move |event| {
@@ -314,54 +249,107 @@ impl Ui {
             event.skip(true);
         });
         let ui = self.clone();
+        self.settings_button.on_click(move |_| ui.open_settings());
+        let ui = self.clone();
         self.theme_button.on_click(move |_| ui.show_theme_menu());
         let ui = self.clone();
         self.frame.on_menu_selected(move |event| ui.on_theme_chosen(event.get_id()));
 
         let ui = self.clone();
-        self.build.on_click(move |_| ui.on_build());
-        let ui = self.clone();
         self.scan.on_click(move |_| ui.on_scan());
+
+        // files can be dropped anywhere in the window, also on the (read-only) source field
+        attach_drop(self, &self.panel);
+        attach_drop(self, &self.source);
+    }
+
+    fn idle(&self) -> bool {
+        self.state.borrow().job.is_none()
+    }
+
+    /// Feedback while a file is dragged over the window: the caption says what a drop does.
+    fn drop_hover(&self, over: bool) {
+        if over {
+            // unmistakable: the field takes a tint of the accent colour and the caption the accent colour itself
+            let accent = SystemSettings::get_colour(SystemColour::Highlight);
+            let normal = self.state.borrow().field_colour;
+            self.source.set_background_color(mix(normal, accent, 0.35));
+            self.source_caption.set_foreground_color(readable(accent, normal));
+            self.source_caption.set_label("Drop to use this file as the source");
+        } else {
+            self.source.set_background_color(self.state.borrow().field_colour);
+            self.refresh_caption();
+        }
+        self.source.refresh(true, None);
+    }
+
+    /// A drop: the first dropped file becomes the source. Folders and drops while a scan
+    /// runs are refused.
+    fn on_drop(&self, files: &[String]) -> bool {
+        self.drop_hover(false);
+        let Some(file) = files.iter().map(PathBuf::from).find(|p| p.is_file()) else { return false };
+        if !self.idle() {
+            return false;
+        }
+        self.state.borrow_mut().source = Some(file);
+        self.sync();
+        true
+    }
+
+    fn prefs(&self) -> Rc<RefCell<Prefs>> {
+        self.state.borrow().prefs.clone()
+    }
+
+    fn set_mode(&self, on_the_fly: bool) {
+        let prefs = self.prefs();
+        prefs.borrow_mut().on_the_fly = on_the_fly;
+        prefs.borrow().save();
+        self.sync();
+    }
+
+    fn open_settings(&self) {
+        settings_window::show(&self.frame, &self.prefs());
+        self.sync(); // the paths may have changed
     }
 
     /// Brings every widget in line with the state. The only place that enables or disables.
     fn sync(&self) {
-        let (source, hvsc, index, on_the_fly, running) = {
+        let (source, prefs, running) = {
             let st = self.state.borrow();
-            (st.source.clone(), st.hvsc.clone(), st.index.clone(), st.on_the_fly, st.job.as_ref().map(|j| j.kind))
+            (st.source.clone(), st.prefs.borrow().clone(), st.job.is_some())
         };
-        let idle = running.is_none();
+        let idle = !running;
         let have_source = source.is_some();
         let shown = source.as_deref().map(file_name).unwrap_or_default();
         if self.source.get_value() != shown {
             self.source.set_value(&shown);
         }
         self.source.set_tooltip(&source.as_ref().map(|p| p.display().to_string()).unwrap_or_default());
-        let have_tunes = if on_the_fly { hvsc.is_some() } else { index.is_some() };
+        let tunes = if prefs.on_the_fly { prefs.hvsc.as_ref() } else { prefs.index.as_ref() };
+        let have_tunes = tunes.is_some();
 
-        self.hvsc.show(hvsc.as_deref(), idle);
-        self.index.show(index.as_deref(), idle);
         self.source_clear.enable(idle && have_source);
-        for control in [&self.source as &dyn WxWidget, &self.source_browse, &self.hvsc.button, &self.index.button] {
+        for control in [&self.source as &dyn WxWidget, &self.source_browse, &self.radio_index, &self.radio_fly, &self.settings_button] {
             control.enable(idle);
         }
-        self.radio_index.enable(idle);
-        self.radio_fly.enable(idle);
+        self.scan.set_label(if running { "Cancel" } else { FIND });
+        self.scan.enable(running || (have_source && have_tunes));
 
-        self.build.set_label(if running == Some(Kind::Build) { "Cancel" } else { "Build index..." });
-        self.build.enable(running == Some(Kind::Build) || (idle && hvsc.is_some()));
-        self.scan.set_label(if running == Some(Kind::Scan) { "Cancel" } else { "Scan" });
-        self.scan.enable(running == Some(Kind::Scan) || (idle && have_source && have_tunes));
-
-        let hint = match (idle, have_source, have_tunes, on_the_fly) {
-            (false, ..) => "",
-            (_, false, ..) => "Choose a source file",
-            (_, _, false, true) => "Select the HVSC folder",
-            (_, _, false, false) => "Select an index, or build one",
-            _ => "",
+        // what is missing in normal text, what a scan will use in grey
+        let (text, missing) = match (running, have_tunes, have_source, prefs.on_the_fly) {
+            (true, ..) => (String::new(), false),
+            (_, false, _, true) => ("Select the HVSC folder in Settings".to_string(), true),
+            (_, false, _, false) => ("Select or build an index in Settings".to_string(), true),
+            (_, _, false, _) => ("Choose or drop a source file".to_string(), true),
+            (_, true, true, true) => (format!("Reading HVSC: {}", file_name(tunes.unwrap())), false),
+            (_, true, true, false) => (format!("Using index: {}", file_name(tunes.unwrap())), false),
         };
-        self.hint.set_label(if hint.is_empty() { " " } else { hint });
-        self.refresh_captions();
+        let colour = SystemSettings::get_colour(if missing { SystemColour::WindowText } else { SystemColour::GrayText });
+        self.info.show(missing);
+        self.status.set_foreground_color(colour);
+        self.status.set_label(&if text.is_empty() { " ".to_string() } else { text });
+        self.status.set_tooltip(&tunes.map(|p| p.display().to_string()).unwrap_or_default());
+        self.refresh_caption();
         self.refresh_logo();
         self.panel.layout();
     }
@@ -382,29 +370,15 @@ impl Ui {
         }
     }
 
-    /// Sets the path captions, each cut in the middle to fit the width it has.
-    fn refresh_captions(&self) {
-        let (source, hvsc, index) = {
-            let st = self.state.borrow();
-            (st.source.clone(), st.hvsc.clone(), st.index.clone())
-        };
-        // Each caption is at most as wide as the control above it: the field, or the button
-        // (without its trash icon). The panel size event fires before the sizer has laid out
-        // the children, so work from the panel width and the controls that have a fixed width.
-        const GAP: i32 = 8; // between a field/button and the icons beside it
+    /// Sets the full-path caption under the source field, cut in the middle to the width of
+    /// the field. The panel size event fires before the sizer has laid out the children, so
+    /// this works from the panel width and the controls that have a fixed width.
+    fn refresh_caption(&self) {
         let panel = self.panel.get_client_size().width;
         let field = panel - 2 * PAD - self.source_browse.get_size().width - self.source_clear.get_size().width - 2 * GAP;
-        let button = (panel - 3 * PAD) / 2 - self.hvsc.clear.get_size().width - GAP;
-        let full = (field - CAPTION_INSET).max(60);
-        let half = (button - CAPTION_INSET).max(60);
-        let text = |p: &Option<PathBuf>| p.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
-        let grey = SystemSettings::get_colour(SystemColour::GrayText);
-        for caption in [&self.source_caption, &self.hvsc.caption, &self.index.caption] {
-            caption.set_foreground_color(grey);
-        }
-        self.source_caption.set_label(&fit(&self.source_caption, &text(&source), full));
-        self.hvsc.caption.set_label(&fit(&self.hvsc.caption, &text(&hvsc), half));
-        self.index.caption.set_label(&fit(&self.index.caption, &text(&index), half));
+        let text = self.state.borrow().source.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
+        self.source_caption.set_foreground_color(SystemSettings::get_colour(SystemColour::GrayText));
+        self.source_caption.set_label(&fit(&self.source_caption, &text, (field - widgets::CAPTION_INSET).max(60)));
     }
 
     fn show_theme_menu(&self) {
@@ -442,30 +416,7 @@ impl Ui {
                 .build();
             dialog.show_modal();
         }
-        self.sync(); // refreshes the caption colours, which are fixed at the time they are set
-    }
-
-    fn on_build(&self) {
-        if let Some(job) = &self.state.borrow().job {
-            job.cancel();
-            return;
-        }
-        let Some(hvsc) = self.state.borrow().hvsc.clone() else { return };
-        // default: the per-user data folder, so a new HVSC release can't wipe the index
-        let dir = StandardPaths::user_data_dir();
-        let _ = std::fs::create_dir_all(&dir);
-        let dialog = FileDialog::builder(&self.frame)
-            .with_message("Save the index as")
-            .with_default_dir(&dir)
-            .with_default_file("hvsc.idx")
-            .with_wildcard("Index files|*.idx|All files|*")
-            .with_style(FileDialogStyle::Save | FileDialogStyle::OverwritePrompt)
-            .build();
-        if dialog.show_modal() != ID_OK {
-            return;
-        }
-        let Some(path) = dialog.get_path().map(PathBuf::from) else { return };
-        self.start(Job::build(hvsc, path), true);
+        self.sync(); // refreshes the colours that are fixed at the time they are set
     }
 
     fn on_scan(&self) {
@@ -475,28 +426,25 @@ impl Ui {
         }
         let (file, source, settings, on_the_fly) = {
             let st = self.state.borrow();
-            let source = if st.on_the_fly { st.hvsc.clone().map(Source::Hvsc) } else { st.index.clone().map(Source::Index) };
-            (st.source.clone(), source, st.settings.clone(), st.on_the_fly)
+            let prefs = st.prefs.borrow();
+            let source = if prefs.on_the_fly { prefs.hvsc.clone().map(Source::Hvsc) } else { prefs.index.clone().map(Source::Index) };
+            (st.source.clone(), source, st.settings.clone(), prefs.on_the_fly)
         };
         let (Some(file), Some(source)) = (file, source) else { return };
-        self.start(Job::scan(file, source, settings), on_the_fly);
-    }
-
-    /// `show_progress`: the job reports progress (an index lookup is too quick for a bar).
-    fn start(&self, job: Job, show_progress: bool) {
-        if show_progress && !self.state.borrow().gauge_shown {
+        // an index lookup is too quick for a progress bar; reading the whole HVSC is not
+        if on_the_fly && !self.state.borrow().gauge_shown {
             self.state.borrow_mut().gauge_shown = true;
             self.gauge.show(true);
             self.grow(36);
         }
         self.gauge.set_value(0);
         self.results.set_value("");
-        self.state.borrow_mut().job = Some(job);
+        self.state.borrow_mut().job = Some(Job::scan(file, source, settings));
         self.timer.start(TICK_MS, false);
         self.sync();
     }
 
-    /// Called by the timer while a job runs: moves the bar and picks up the result.
+    /// Called by the timer while a scan runs: moves the bar and picks up the result.
     fn tick(&self) {
         let (percent, result) = match &self.state.borrow().job {
             Some(job) => (job.percent(), job.take_result()),
@@ -509,16 +457,8 @@ impl Ui {
         self.state.borrow_mut().job = None;
         self.gauge.set_value(if result.is_ok() { 100 } else { 0 });
         let text = match result {
-            Ok(Outcome::Built { path, summary }) => {
-                self.state.borrow_mut().index = Some(path.clone());
-                format!(
-                    "Index built: {} tunes, {:.0} MB\n{}\n\nIt is selected as the index file; use Indexed mode to scan with it.",
-                    summary.tunes,
-                    summary.bytes as f64 / 1e6,
-                    path.display()
-                )
-            }
             Ok(Outcome::Scanned(found)) => found.iter().map(describe).collect::<Vec<_>>().join("\n"),
+            Ok(Outcome::Built { .. }) => String::new(), // index builds run in the settings window
             Err(e) if e == CANCELLED => "Cancelled.".to_string(),
             Err(e) => {
                 let dialog = MessageDialog::builder(&self.frame, &e, TITLE)
@@ -545,28 +485,41 @@ impl Ui {
     }
 }
 
-/// A caption with the standard inset on its left.
-fn indented(caption: &StaticText) -> BoxSizer {
-    let row = BoxSizer::builder(Orientation::Horizontal).build();
-    row.add_spacer(CAPTION_INSET);
-    row.add(caption, 1, SizerFlag::Expand, 0);
-    row
+/// Perceived brightness, 0 (black) to 255 (white).
+fn luma(c: Colour) -> f32 {
+    0.299 * c.r as f32 + 0.587 * c.g as f32 + 0.114 * c.b as f32
 }
 
-/// A label above a Select/Change button + trash icon + a caption for the chosen path.
-fn setting_cell(panel: &Panel, label: &str, clear: &BitmapButton) -> (Setting, BoxSizer) {
-    let label = StaticText::builder(panel).with_label(label).build();
-    let button = Button::builder(panel).with_label("Select...").build();
-    let caption = StaticText::builder(panel).with_label(" ").build();
-    caption.set_foreground_color(SystemSettings::get_colour(SystemColour::GrayText));
-    let row = BoxSizer::builder(Orientation::Horizontal).build();
-    row.add(&button, 1, SizerFlag::Expand | SizerFlag::AlignCenterVertical, 0);
-    row.add(clear, 0, SizerFlag::AlignCenterVertical | SizerFlag::Left, 8);
-    let cell = BoxSizer::builder(Orientation::Vertical).build();
-    cell.add(&label, 0, SizerFlag::Bottom, 6);
-    cell.add_sizer(&row, 0, SizerFlag::Expand, 0);
-    cell.add_sizer(&indented(&caption), 0, SizerFlag::Expand | SizerFlag::Top, 4);
-    (Setting { button, clear: *clear, caption }, cell)
+/// `accent` as text colour on `background`: on a dark background the accent (a fairly deep
+/// blue) is lightened toward white so it stays readable; on a light one it is used as it is.
+fn readable(accent: Colour, background: Colour) -> Colour {
+    if luma(background) < 128.0 { mix(accent, Colour::rgb(255, 255, 255), 0.55) } else { accent }
+}
+
+/// `a` blended towards `b` by `t` (0.0 = a, 1.0 = b).
+fn mix(a: Colour, b: Colour, t: f32) -> Colour {
+    let channel = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
+    Colour::rgb(channel(a.r, b.r), channel(a.g, b.g), channel(a.b, b.b))
+}
+
+/// Makes `window` accept dropped files for `ui`.
+fn attach_drop<W: WxWidget>(ui: &Ui, window: &W) {
+    let (enter, over, leave, files) = (ui.clone(), ui.clone(), ui.clone(), ui.clone());
+    let hover = move |ui: &Ui, default: DragResult| {
+        // while a scan runs the cursor shows that a drop is not possible
+        if ui.idle() {
+            ui.drop_hover(true);
+            default
+        } else {
+            DragResult::None
+        }
+    };
+    FileDropTarget::builder(window)
+        .with_on_enter(move |_, _, default| hover(&enter, default))
+        .with_on_drag_over(move |_, _, default| if over.idle() { default } else { DragResult::None })
+        .with_on_leave(move || leave.drop_hover(false))
+        .with_on_drop_files(move |dropped, _, _| files.on_drop(&dropped))
+        .build();
 }
 
 /// One result block, in the same wording as the command line tool.
@@ -585,47 +538,23 @@ fn describe(found: &Identification) -> String {
     out
 }
 
-/// The last component of a path, or the whole path if it has none.
-fn file_name(path: &Path) -> String {
-    path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned())
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-/// `text` cut in the middle so it is at most `max_px` wide in the font of `widget`; the
-/// full text when it fits, a blank when empty (keeps the line's height).
-fn fit(widget: &StaticText, text: &str, max_px: i32) -> String {
-    if text.is_empty() {
-        return " ".to_string();
+    #[test]
+    fn mix_blends_between_two_colours() {
+        let (black, white) = (Colour::rgb(0, 0, 0), Colour::rgb(255, 255, 255));
+        assert_eq!((mix(black, white, 0.0).r, mix(black, white, 1.0).r), (0, 255));
+        assert_eq!(mix(black, white, 0.5).g, 128);
+        assert_eq!(mix(Colour::rgb(10, 20, 30), Colour::rgb(10, 20, 30), 0.7).b, 30);
     }
-    let width = |t: &str| widget.get_text_extent(t).width;
-    if width(text) <= max_px {
-        return text.to_string();
-    }
-    // the most characters (counting the "...") that still fit
-    let (mut lo, mut hi) = (1, text.chars().count());
-    while lo < hi {
-        let mid = (lo + hi + 1) / 2;
-        if width(&shorten(text, mid)) <= max_px { lo = mid } else { hi = mid - 1 }
-    }
-    shorten(text, lo)
-}
 
-/// Shortens a long path in the middle: "/Users/me/.../C64Music" (char-safe).
-fn shorten(path: &str, max: usize) -> String {
-    let c: Vec<char> = path.chars().collect();
-    if c.len() <= max {
-        return path.to_string();
+    #[test]
+    fn accent_text_is_lightened_on_dark_backgrounds_only() {
+        let accent = Colour::rgb(0, 90, 220);
+        let (dark, light) = (Colour::rgb(30, 30, 30), Colour::rgb(250, 250, 250));
+        assert!(luma(readable(accent, dark)) > luma(accent) + 40.0, "must get clearly brighter on dark");
+        assert_eq!(readable(accent, light).b, accent.b, "unchanged on light");
     }
-    let keep = max.saturating_sub(3);
-    let (head, tail) = (keep / 3, keep - keep / 3);
-    format!("{}...{}", c[..head].iter().collect::<String>(), c[c.len() - tail..].iter().collect::<String>())
-}
-
-/// Half-filled circle ("appearance"), same grey as the trash icon.
-const THEME_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="#8e8e93"/></svg>"##;
-
-/// Trash-can icon as inline SVG. Mid-grey reads on both light and dark backgrounds.
-fn trash_svg(opacity: f32) -> String {
-    format!(
-        r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-opacity="{opacity}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 10v6M14 10v6"/></svg>"##
-    )
 }
