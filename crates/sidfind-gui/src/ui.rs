@@ -39,8 +39,6 @@ const START_HEIGHT: i32 = 800;
 const MIN_WIDTH: i32 = 520;
 /// How far the version's grey is pulled toward the window background (0 = system grey).
 const VERSION_FADE: f32 = 0.35;
-/// The release version, shown next to the title. Comes from Cargo.toml.
-const VERSION: &str = env!("CARGO_PKG_VERSION");
 // ids of the entries of the theme menu
 const ID_THEME_SYSTEM: i32 = 7001;
 const ID_THEME_LIGHT: i32 = 7002;
@@ -107,7 +105,9 @@ pub fn build(theme: Theme) {
     let logo_height = (LOGO_WIDTH as f32 * LOGO_VIEW.1 / LOGO_VIEW.0).round() as i32;
     // StaticBitmap cannot exist without a bitmap: start with an empty one, `refresh_logo` draws the real logo
     let logo = StaticBitmap::builder(&panel).with_bitmap(Bitmap::from_rgba(&[0, 0, 0, 0], 1, 1)).build();
-    let version = StaticText::builder(&panel).with_label(&format!("v {VERSION}")).build();
+    // the git commit is shown too, for telling builds apart while debugging
+    let version =
+        StaticText::builder(&panel).with_label(concat!("v ", env!("CARGO_PKG_VERSION"), " (", env!("SIDFIND_GIT_HASH"), ")")).build();
     let mut version_offset = 0;
     if let Some(mut font) = version.get_font() {
         font.set_point_size((font.get_point_size() - 1).max(8));

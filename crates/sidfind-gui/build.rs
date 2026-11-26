@@ -1,12 +1,30 @@
-//! Windows only: embeds an application manifest. Without it Windows runs the program with the
-//! classic (pre-XP) look of the controls, no high-DPI support (blurry on scaled displays) and
-//! the legacy ANSI code page. On other platforms this does nothing.
+//! Two jobs. Every platform: the git commit is compiled in (`SIDFIND_GIT_HASH`) so the window can
+//! show which build it is. Windows only: embeds an application manifest. Without it Windows runs
+//! the program with the classic (pre-XP) look of the controls, no high-DPI support (blurry on
+//! scaled displays) and the legacy ANSI code page.
 
 use embed_manifest::manifest::{ActiveCodePage, DpiAwareness, Setting, SupportedOS::*};
 use embed_manifest::{embed_manifest, new_manifest};
+use std::process::Command;
+
+/// The short commit hash of HEAD, with `-dirty` when tracked files have uncommitted changes.
+/// `unknown` when git is not available (e.g. a source archive).
+fn git_hash() -> String {
+    let run = |args: &[&str]| Command::new("git").args(args).output().ok().filter(|o| o.status.success());
+    let Some(hash) = run(&["rev-parse", "--short", "HEAD"]) else {
+        return "unknown".to_string();
+    };
+    let hash = String::from_utf8_lossy(&hash.stdout).trim().to_string();
+    let dirty = run(&["diff-index", "--quiet", "HEAD", "--"]).is_none();
+    if dirty { format!("{hash}-dirty") } else { hash }
+}
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    // the commit changes .git/HEAD (branch switch) or the branch file (new commit)
+    println!("cargo:rerun-if-changed=../../.git/HEAD");
+    println!("cargo:rerun-if-changed=../../.git/refs/heads");
+    println!("cargo:rustc-env=SIDFIND_GIT_HASH={}", git_hash());
     // the target, not the host: this also holds when cross-compiling
     if !std::env::var("TARGET").unwrap_or_default().contains("windows") {
         return;
