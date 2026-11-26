@@ -17,5 +17,6 @@ sidfind-core = { path = "../sidfind-core" }
 wxdragon = { version = "0.9.25", default-features = false }
 
 [build-dependencies]
-# Embeds the Windows application manifest (see build.rs); does nothing on other platforms.
+# Embeds the Windows application manifest and icon (see build.rs); does nothing on other platforms.
 embed-manifest = "1.4"
+winres = "0.1"

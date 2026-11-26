@@ -19,6 +19,9 @@
 /.vscode/
 *.iml
 
+# Misc
+scripts
+
 # OS junk
 .DS_Store
 Thumbs.db

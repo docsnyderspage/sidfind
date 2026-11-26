@@ -25,6 +25,7 @@ fn main() {
     println!("cargo:rerun-if-changed=../../.git/HEAD");
     println!("cargo:rerun-if-changed=../../.git/refs/heads");
     println!("cargo:rustc-env=SIDFIND_GIT_HASH={}", git_hash());
+    println!("cargo:rerun-if-changed=../../assets/icons/sidfind.ico");
     // the target, not the host: this also holds when cross-compiling
     if !std::env::var("TARGET").unwrap_or_default().contains("windows") {
         return;
@@ -40,5 +41,11 @@ fn main() {
     if let Err(e) = embed_manifest(manifest) {
         // the program still works, only without the modern look
         println!("cargo:warning=could not embed the Windows manifest: {e}");
+    }
+    // the program icon in the exe (Explorer, taskbar, Alt-Tab)
+    let mut resources = winres::WindowsResource::new();
+    resources.set_icon("../../assets/icons/sidfind.ico");
+    if let Err(e) = resources.compile() {
+        println!("cargo:warning=could not embed the Windows icon: {e}");
     }
 }
