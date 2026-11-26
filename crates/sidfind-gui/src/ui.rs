@@ -243,6 +243,12 @@ pub fn build(theme: Theme) {
     // Sizing before that made the window too short, and the bottom row (status and Find SID)
     // was cut off ("Negative content height" in GTK).
     ui.fit_height();
+    // DEBUG (remove after the Linux check): GTK applies the size asynchronously, so fit again shortly after
+    let refit = Timer::new(&frame);
+    let again = ui.clone();
+    refit.on_tick(move |_| again.fit_height());
+    refit.start(100, true);
+    std::mem::forget(refit);
     frame.set_min_size(Size::new(MIN_WIDTH, frame.get_size().height));
     frame.centre();
 
@@ -580,6 +586,16 @@ impl Ui {
         let bottom = |w: &dyn WxWidget| w.get_position().y + w.get_size().height;
         let missing = bottom(&self.scan).max(bottom(&self.status)) + PAD - self.panel.get_client_size().height;
         let height = self.frame.get_size().height + missing.max(0);
+        // DEBUG (remove after the Linux check)
+        eprintln!(
+            "fit_height: frame {} client {} scan_bottom {} status_bottom {} missing {} -> {}",
+            self.frame.get_size().height,
+            self.panel.get_client_size().height,
+            bottom(&self.scan),
+            bottom(&self.status),
+            missing,
+            height
+        );
         self.frame.set_size(Size::new(width, height));
     }
 }
