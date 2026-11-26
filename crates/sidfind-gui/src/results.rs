@@ -7,7 +7,7 @@ use std::rc::Rc;
 use sidfind_core::Identification;
 use wxdragon::prelude::*;
 
-use crate::widgets::{GAP, PAD, file_name, fit, muted};
+use crate::widgets::{GAP, PAD, file_name, fit, muted, tint_bar};
 
 /// How many matches can be shown (the scan settings' `top` must not exceed this).
 const MAX_ROWS: usize = 10;
@@ -68,6 +68,7 @@ impl ResultsView {
                 // each row is a panel of its own, so hiding it also removes its spacing
                 let row = Panel::builder(&panel).build();
                 let bar = Gauge::builder(&row).with_range(100).with_size(Size::new(BAR_WIDTH, BAR_HEIGHT)).build();
+                tint_bar(&bar);
                 let percent = StaticText::builder(&row).with_label(" ").with_style(StaticTextStyle::AlignRight).build();
                 percent.set_min_size(Size::new(percent_width, -1));
                 let name = StaticText::builder(&row).with_label(" ").build();

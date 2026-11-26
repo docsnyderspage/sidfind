@@ -10,7 +10,7 @@ use wxdragon::prelude::*;
 
 use crate::job::{Job, Outcome};
 use crate::prefs::Prefs;
-use crate::widgets::{GAP, PAD, PathSetting, TITLE, headline, hyperlink};
+use crate::widgets::{GAP, PAD, PathSetting, TITLE, grow, headline, hyperlink, tint_bar};
 
 const TICK_MS: i32 = 100;
 /// Where to get the HVSC collection.
@@ -62,6 +62,7 @@ pub fn show(parent: &Frame, prefs: &Rc<RefCell<Prefs>>) {
     // building an index: the button, and why it is unavailable when it is
     let build_row = BoxSizer::builder(Orientation::Horizontal).build();
     let build = Button::builder(&panel).with_label("Build index...").build();
+    grow(&build);
     let hint = StaticText::builder(&panel).with_label(" ").build();
     build_row.add(&build, 0, SizerFlag::AlignCenterVertical, 0);
     build_row.add(&hint, 1, SizerFlag::AlignCenterVertical | SizerFlag::Left, PAD);
@@ -69,6 +70,7 @@ pub fn show(parent: &Frame, prefs: &Rc<RefCell<Prefs>>) {
 
     // progress and the outcome stay hidden until a build starts
     let gauge = Gauge::builder(&panel).with_range(100).build();
+    tint_bar(&gauge);
     let status = StaticText::builder(&panel).with_label(" ").build();
     root.add(&gauge, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom, PAD);
     root.add(&status, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom, PAD);
@@ -78,6 +80,7 @@ pub fn show(parent: &Frame, prefs: &Rc<RefCell<Prefs>>) {
     root.add_spacer(SECTION_GAP); // air before the footer; the stretch keeps it at the bottom if the window grows
     root.add_stretch_spacer(1);
     let close = Button::builder(&panel).with_label("Close").build();
+    grow(&close);
     // the project page: opens in the default browser (the URL comes from Cargo.toml)
     let link = hyperlink(&panel, "SidFind on GitHub", env!("CARGO_PKG_REPOSITORY"));
     let close_row = BoxSizer::builder(Orientation::Horizontal).build();
@@ -147,7 +150,7 @@ impl Win {
             }
         });
         let win = self.clone();
-        self.hvsc.clear.on_click(move |_| {
+        self.hvsc.clear.on_click(move || {
             win.prefs.borrow_mut().hvsc = None;
             win.changed();
         });
@@ -164,7 +167,7 @@ impl Win {
             }
         });
         let win = self.clone();
-        self.index.clear.on_click(move |_| {
+        self.index.clear.on_click(move || {
             win.prefs.borrow_mut().index = None;
             win.changed();
         });

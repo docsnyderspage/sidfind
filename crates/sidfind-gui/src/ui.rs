@@ -15,8 +15,8 @@ use crate::results::ResultsView;
 use crate::settings_window;
 use crate::theme::{self, Applied, Theme};
 use crate::widgets::{
-    self, GAP, GEAR_SVG, INFO_SVG, PAD, THEME_SVG, TITLE, baseline_offset, file_name, fit, icon_button, indented, luma, mix, muted, square,
-    trash_button,
+    self, GAP, GEAR_SVG, INFO_SVG, PAD, THEME_SVG, TITLE, TextField, TrashButton, baseline_offset, file_name, fit, icon_button, indented,
+    is_source_file, luma, mix, muted, square,
 };
 
 /// Label of the main button.
@@ -70,9 +70,9 @@ struct Ui {
     theme_button: StaticBitmap,
     logo: StaticBitmap,
     version: StaticText,
-    source: TextCtrl,
+    source: TextField,
     source_browse: Button,
-    source_clear: BitmapButton,
+    source_clear: TrashButton,
     source_caption: StaticText,
     radio_index: RadioButton,
     radio_fly: RadioButton,
@@ -139,18 +139,20 @@ pub fn build(theme: Theme) {
         source_label.set_font(&font);
     }
     // display-only: shows the file name, the full path is the tooltip; set through Browse
-    let source = TextCtrl::builder(&panel).with_style(TextCtrlStyle::ReadOnly).build();
     let source_browse = Button::builder(&panel).with_label("Browse...").build();
-    let source_clear = trash_button(&panel, "Clear source file");
-    // the icon buttons are as tall as the input
-    let side = source.get_best_size().height;
+    widgets::grow(&source_browse);
+    let source = TextField::new(&panel);
+    // the field, the Browse button and the icon buttons share one height
+    let side = widgets::tall(&source_browse);
+    source.panel.set_min_size(Size::new(-1, side));
+    let source_clear = TrashButton::new(&panel, "Clear source file");
     square(&settings_button, side);
     square(&theme_button, side);
-    square(&source_clear, side);
+    square(source_clear.widget(), side);
     let source_row = BoxSizer::builder(Orientation::Horizontal).build();
-    source_row.add(&source, 1, SizerFlag::Expand | SizerFlag::AlignCenterVertical, 0);
+    source_row.add(&source.panel, 1, SizerFlag::Expand | SizerFlag::AlignCenterVertical, 0);
     source_row.add(&source_browse, 0, SizerFlag::AlignCenterVertical | SizerFlag::Left, GAP);
-    source_row.add(&source_clear, 0, SizerFlag::AlignCenterVertical | SizerFlag::Left, GAP);
+    source_row.add(source_clear.widget(), 0, SizerFlag::AlignCenterVertical | SizerFlag::Left, GAP);
     root.add(&source_label, 0, SizerFlag::Left | SizerFlag::Right | SizerFlag::Top, PAD);
     root.add_spacer(6);
     root.add_sizer(&source_row, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right, PAD);
@@ -177,7 +179,8 @@ pub fn build(theme: Theme) {
     let info = StaticBitmap::builder(&panel).with_bitmap(info_icon).build();
     let status = StaticText::builder(&panel).with_label(" ").build();
     // the main action: the default button, which the system draws emphasised, and a bit larger
-    let scan = Button::builder(&panel).with_label(FIND).with_size(Size::new(110, 36)).build();
+    let scan = Button::builder(&panel).with_label(FIND).with_size(Size::new(110, -1)).build();
+    widgets::grow(&scan);
     scan.set_default();
     actions.add(&info, 0, SizerFlag::AlignCenterVertical | SizerFlag::Right, 6);
     actions.add(&status, 1, SizerFlag::AlignCenterVertical | SizerFlag::Right, PAD);
@@ -186,6 +189,7 @@ pub fn build(theme: Theme) {
 
     // progress and results stay hidden (no empty space) until first needed
     let gauge = Gauge::builder(&panel).with_range(100).build();
+    widgets::tint_bar(&gauge);
     root.add(&gauge, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom, PAD);
     let results = ResultsView::new(&panel);
     root.add(&results.panel, 1, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom, PAD);
@@ -264,7 +268,7 @@ impl Ui {
             event.skip(true); // the panel's own layout must still run
         });
         let ui = self.clone();
-        self.source_clear.on_click(move |_| {
+        self.source_clear.on_click(move || {
             ui.state.borrow_mut().source = None;
             ui.sync();
         });
@@ -272,11 +276,11 @@ impl Ui {
         self.source_browse.on_click(move |_| {
             let dialog = FileDialog::builder(&ui.frame)
                 .with_message("Select a PRG file or VICE snapshot")
-                .with_wildcard("C64 programs|*.prg;*.PRG;*.vsf;*.VSF|All files|*")
+                .with_wildcard("C64 programs|*.prg;*.PRG;*.vsf;*.VSF")
                 .build();
             if dialog.show_modal() == ID_OK {
-                if let Some(path) = dialog.get_path() {
-                    ui.state.borrow_mut().source = Some(PathBuf::from(path));
+                if let Some(path) = dialog.get_path().map(PathBuf::from).filter(|p| is_source_file(p)) {
+                    ui.state.borrow_mut().source = Some(path);
                     ui.sync();
                 }
             }
@@ -304,7 +308,8 @@ impl Ui {
 
         // files can be dropped anywhere in the window, also on the (read-only) source field
         attach_drop(self, &self.panel);
-        attach_drop(self, &self.source);
+        attach_drop(self, &self.source.panel);
+        attach_drop(self, &self.source.text);
     }
 
     fn idle(&self) -> bool {
@@ -324,14 +329,14 @@ impl Ui {
             self.source.set_background_color(self.state.borrow().field_colour);
             self.refresh_caption();
         }
-        self.source.refresh(true, None);
+        self.source.refresh();
     }
 
     /// A drop: the first dropped file becomes the source. Folders and drops while a scan
     /// runs are refused.
     fn on_drop(&self, files: &[String]) -> bool {
         self.drop_hover(false);
-        let Some(file) = files.iter().map(PathBuf::from).find(|p| p.is_file()) else {
+        let Some(file) = files.iter().map(PathBuf::from).find(|p| p.is_file() && is_source_file(p)) else {
             return false;
         };
         if !self.idle() {
@@ -378,7 +383,8 @@ impl Ui {
         let have_tunes = missing_setting.is_none();
 
         self.source_clear.enable(idle && have_source);
-        for control in [&self.source as &dyn WxWidget, &self.source_browse, &self.radio_index, &self.radio_fly, &self.settings_button] {
+        for control in [&self.source.panel as &dyn WxWidget, &self.source_browse, &self.radio_index, &self.radio_fly, &self.settings_button]
+        {
             control.enable(idle);
         }
         self.scan.set_label(if running { "Cancel" } else { FIND });
@@ -436,7 +442,7 @@ impl Ui {
     /// this works from the panel width and the controls that have a fixed width.
     fn refresh_caption(&self) {
         let panel = self.panel.get_client_size().width;
-        let field = panel - 2 * PAD - self.source_browse.get_size().width - self.source_clear.get_size().width - 2 * GAP;
+        let field = panel - 2 * PAD - self.source_browse.get_size().width - self.source_clear.widget().get_size().width - 2 * GAP;
         let text = self.state.borrow().source.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
         self.source_caption.set_foreground_color(muted(&self.panel));
         self.source_caption.set_label(&fit(&self.source_caption, &text, (field - widgets::CAPTION_INSET).max(60)));

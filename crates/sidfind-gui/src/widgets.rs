@@ -1,6 +1,8 @@
 //! Small widgets and helpers shared by the main window and the settings window.
 
+use std::cell::Cell;
 use std::path::Path;
+use std::rc::Rc;
 
 use wxdragon::prelude::*;
 
@@ -13,6 +15,8 @@ pub const TITLE: &str = "SidFind";
 
 /// The grey of the icon SVGs (the colour they draw in at rest). Hover swaps it for the text colour.
 pub const ICON_GREY: &str = "#8e8e93";
+/// Opacity of an icon that is disabled.
+const DISABLED_OPACITY: f32 = 0.3;
 
 /// Half-filled circle ("appearance"), same grey as the trash icon.
 pub const THEME_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="#8e8e93"/></svg>"##;
@@ -31,15 +35,12 @@ pub fn mix(a: Colour, b: Colour, t: f32) -> Colour {
     Colour::rgb(channel(a.r, b.r), channel(a.g, b.g), channel(a.b, b.b))
 }
 
-/// The grey for secondary text on `window`. On a dark background the system grey (a dark
-/// grey on Windows) is too faint, so it is derived from the text colour instead.
+/// The grey for secondary text on `window`: the text colour blended toward the background, so it
+/// stays readable on both themes. The system grey (GrayText) is too faint on dark and too bright on light.
 pub fn muted(window: &dyn WxWidget) -> Colour {
     let background = window.get_background_color();
-    if luma(background) < 128.0 {
-        mix(SystemSettings::get_colour(SystemColour::WindowText), background, 0.3)
-    } else {
-        SystemSettings::get_colour(SystemColour::GrayText)
-    }
+    let text = SystemSettings::get_colour(SystemColour::WindowText);
+    if luma(background) < 128.0 { mix(text, background, 0.3) } else { mix(text, background, 0.5) }
 }
 
 /// Vertical offset that puts the baseline of a line of text on the bottom edge of something
@@ -52,9 +53,9 @@ pub fn baseline_offset(above_height: i32, text_height: i32, descent: i32) -> i32
 pub const INFO_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>"##;
 
 /// Trash-can icon as inline SVG. Mid-grey reads on both light and dark backgrounds.
-fn trash_svg(opacity: f32) -> String {
+fn trash_svg(colour: &str, opacity: f32) -> String {
     format!(
-        r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-opacity="{opacity}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 10v6M14 10v6"/></svg>"##
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{colour}" stroke-opacity="{opacity}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 10v6M14 10v6"/></svg>"##
     )
 }
 
@@ -91,22 +92,156 @@ fn icon_bitmap(panel: &Panel, svg: &str, size: i32) -> Option<Bitmap> {
     BitmapBundle::from_svg_text(svg, Size::new(size, size)).and_then(|b| b.get_bitmap_for(panel))
 }
 
-/// The trash button: starts disabled, with a dimmed icon for that state.
-pub fn trash_button(panel: &dyn WxWidget, tip: &str) -> BitmapButton {
-    let bitmap = |opacity| BitmapBundle::from_svg_text(&trash_svg(opacity), Size::new(16, 16)).and_then(|b| b.get_bitmap_for(panel));
-    let button = BitmapButton::builder(panel).with_bitmap(bitmap(1.0)).with_bitmap_disabled(bitmap(0.3)).build();
-    button.set_tooltip(tip);
-    button.enable(false);
-    button
+/// A trash-can icon as the clear control: dimmed while disabled, and while enabled it turns the
+/// text colour on hover with a hand cursor, like the other icons. A StaticBitmap, because a
+/// BitmapButton cannot change its bitmap after it is created.
+#[derive(Clone)]
+pub struct TrashButton {
+    icon: StaticBitmap,
+    enabled: Rc<Cell<bool>>,
+}
+
+/// The trash icon in `colour` (an SVG colour) at `opacity`.
+fn trash_bitmap(window: &dyn WxWidget, colour: &str, opacity: f32) -> Option<Bitmap> {
+    BitmapBundle::from_svg_text(&trash_svg(colour, opacity), Size::new(16, 16)).and_then(|b| b.get_bitmap_for(window))
+}
+
+impl TrashButton {
+    /// Starts disabled.
+    pub fn new(panel: &Panel, tip: &str) -> Self {
+        let icon = StaticBitmap::builder(panel).with_bitmap(trash_bitmap(panel, ICON_GREY, DISABLED_OPACITY)).build();
+        icon.set_tooltip(tip);
+        let enabled = Rc::new(Cell::new(false));
+        let on_enter = (icon, enabled.clone());
+        icon.on_mouse_enter(move |_| {
+            let (icon, enabled) = &on_enter;
+            if enabled.get() {
+                let ink = SystemSettings::get_colour(SystemColour::WindowText);
+                let hex = format!("#{:02x}{:02x}{:02x}", ink.r, ink.g, ink.b);
+                if let Some(hover) = trash_bitmap(icon, &hex, 1.0) {
+                    icon.set_bitmap(&hover);
+                }
+                if let Some(hand) = Cursor::from_stock(StockCursor::Hand) {
+                    icon.set_cursor(Some(&hand));
+                }
+            }
+        });
+        let on_leave = icon;
+        icon.on_mouse_leave(move |_| {
+            if let Some(grey) = trash_bitmap(&on_leave, ICON_GREY, 1.0) {
+                on_leave.set_bitmap(&grey);
+            }
+            on_leave.set_cursor(None);
+        });
+        TrashButton { icon, enabled }
+    }
+
+    /// The control as a window, for sizers and sizing.
+    pub fn widget(&self) -> &StaticBitmap {
+        &self.icon
+    }
+
+    /// Enables or disables the control (disabled: dimmed, no hover, no clicks).
+    pub fn enable(&self, on: bool) {
+        self.enabled.set(on);
+        let opacity = if on { 1.0 } else { DISABLED_OPACITY };
+        if let Some(bitmap) = trash_bitmap(&self.icon, ICON_GREY, opacity) {
+            self.icon.set_bitmap(&bitmap);
+        }
+    }
+
+    /// Runs `f` on a click, but only while enabled.
+    pub fn on_click(&self, f: impl Fn() + 'static) {
+        let enabled = self.enabled.clone();
+        self.icon.on_mouse_left_up(move |_| {
+            if enabled.get() {
+                f();
+            }
+        });
+    }
 }
 
 /// Makes an icon button at least `side` pixels square, so it lines up with the fields and buttons
 /// beside it (Windows sizes a bitmap button to its icon; macOS pads it, which stays as it is).
+/// Whether `path` is a file the scan takes as a source: a PRG or a VICE snapshot (VSF), in any case.
+pub fn is_source_file(path: &Path) -> bool {
+    path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("prg") || e.eq_ignore_ascii_case("vsf"))
+}
+
+/// A read-only field showing one line of text, vertically centred. It is a bordered panel with a
+/// static text inside: a native text control draws its text at the top of a taller box (macOS).
+#[derive(Clone)]
+pub struct TextField {
+    pub panel: Panel,
+    pub text: StaticText,
+}
+
+impl TextField {
+    pub fn new(parent: &Panel) -> Self {
+        let panel = Panel::builder(parent).with_style(PanelStyle::BorderNone).build();
+        let text = StaticText::builder(&panel).with_label(" ").build();
+        let row = BoxSizer::builder(Orientation::Horizontal).build();
+        row.add(&text, 1, SizerFlag::AlignCenterVertical | SizerFlag::Left | SizerFlag::Right, GAP);
+        panel.set_sizer(row, true);
+        TextField { panel, text }
+    }
+
+    /// The shown text: cut to the field's width.
+    pub fn set_value(&self, value: &str) {
+        let width = self.panel.get_size().width - 2 * GAP;
+        self.text.set_label(&fit(&self.text, value, width));
+    }
+
+    pub fn get_value(&self) -> String {
+        self.text.get_label()
+    }
+
+    pub fn set_tooltip(&self, tip: &str) {
+        self.panel.set_tooltip(tip);
+        self.text.set_tooltip(tip);
+    }
+
+    pub fn set_background_color(&self, colour: Colour) {
+        self.panel.set_background_color(colour);
+        self.text.set_background_color(colour);
+    }
+
+    pub fn set_foreground_color(&self, colour: Colour) {
+        self.text.set_foreground_color(colour);
+    }
+
+    pub fn refresh(&self) {
+        self.panel.refresh(true, None);
+        self.text.refresh(true, None);
+    }
+}
+
+/// The height of input fields and buttons: 25% taller than the platform default.
+pub fn tall(window: &dyn WxWidget) -> i32 {
+    window.get_best_size().height * 5 / 4
+}
+
+/// Gives a field or button the height of [`tall`].
+pub fn grow(window: &dyn WxWidget) {
+    window.set_min_size(Size::new(-1, tall(window)));
+}
+
 pub fn square(window: &dyn WxWidget, side: i32) {
     window.set_min_size(Size::new(side, side));
 }
 
 /// Makes a label bold (the look of a section label).
+/// Colour of the progress bars: the system highlight colour, the same accent the main window uses
+/// for drag and drop, so every bar matches the user's accent (macOS and Windows).
+pub fn bar_colour() -> Colour {
+    SystemSettings::get_colour(SystemColour::Highlight)
+}
+
+/// Gives a progress bar the accent colour of [`bar_colour`]; Windows draws bars green otherwise.
+pub fn tint_bar(bar: &Gauge) {
+    bar.set_foreground_color(bar_colour());
+}
+
 pub fn make_bold(text: &StaticText) {
     if let Some(mut font) = text.get_font() {
         font.make_bold();
@@ -114,11 +249,32 @@ pub fn make_bold(text: &StaticText) {
     }
 }
 
-/// A link that opens `url` in the browser. Its hover colour is the window text colour (white in
-/// dark mode), not the platform default, which is red on macOS dark mode.
-pub fn hyperlink(panel: &Panel, text: &str, url: &str) -> HyperlinkCtrl {
-    let link = HyperlinkCtrl::builder(panel).with_label(text).with_url(url).build();
-    link.set_hover_colour(SystemSettings::get_colour(SystemColour::WindowText));
+/// A link that opens `url` in the browser: plain underlined text in the accent colour, with a hand
+/// cursor. Not a button, so it has no border or focus frame and lines up with the text beside it.
+pub fn hyperlink(panel: &Panel, text: &str, url: &str) -> StaticText {
+    let link = StaticText::builder(panel).with_label(text).build();
+    // the accent is pale on a light background (macOS selection blue), so links use a deeper blue there
+    // dark mode is told by the system text colour (light text), not by the panel's own background
+    let dark = luma(SystemSettings::get_colour(SystemColour::WindowText)) > 128.0;
+    let colour = if dark { bar_colour() } else { Colour::rgb(0, 84, 200) };
+    link.set_foreground_color(colour);
+    if let Some(mut font) = link.get_font() {
+        font.set_underlined(true);
+        link.set_font(&font);
+    }
+    if let Some(hand) = Cursor::from_stock(StockCursor::Hand) {
+        link.set_cursor(Some(&hand));
+    }
+    link.set_tooltip(url);
+    // hover: the text colour, as the icon buttons do
+    let on_enter = link;
+    link.on_mouse_enter(move |_| on_enter.set_foreground_color(SystemSettings::get_colour(SystemColour::WindowText)));
+    let on_leave = link;
+    link.on_mouse_leave(move |_| on_leave.set_foreground_color(colour));
+    let url = url.to_string();
+    link.on_mouse_left_up(move |_| {
+        launch_default_browser(&url, BrowserLaunchFlags::Default);
+    });
     link
 }
 
@@ -134,10 +290,10 @@ pub fn headline(panel: &Panel, text: &str) -> StaticText {
 }
 
 /// A path setting: a Select/Change button, a trash icon and a grey caption with the path.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct PathSetting {
     pub button: Button,
-    pub clear: BitmapButton,
+    pub clear: TrashButton,
     caption: StaticText,
 }
 
@@ -150,12 +306,13 @@ impl PathSetting {
         let label = StaticText::builder(panel).with_label(label).build();
         make_bold(&label);
         let button = Button::builder(panel).with_label("Select...").build();
-        let clear = trash_button(panel, clear_tip);
-        square(&clear, button.get_best_size().height);
+        grow(&button);
+        let clear = TrashButton::new(panel, clear_tip);
+        square(clear.widget(), tall(&button));
         let caption = StaticText::builder(panel).with_label(" ").build();
         let row = BoxSizer::builder(Orientation::Horizontal).build();
         row.add(&button, 1, SizerFlag::Expand | SizerFlag::AlignCenterVertical, 0);
-        row.add(&clear, 0, SizerFlag::AlignCenterVertical | SizerFlag::Left, GAP);
+        row.add(clear.widget(), 0, SizerFlag::AlignCenterVertical | SizerFlag::Left, GAP);
         let cell = BoxSizer::builder(Orientation::Vertical).build();
         // the label, with the link (if any) at the right end of the same line
         let header = BoxSizer::builder(Orientation::Horizontal).build();
@@ -188,7 +345,7 @@ impl PathSetting {
     /// The caption: the path, cut in the middle so it is no wider than the button above it.
     /// `row_width` is the width of the row the button and its trash icon share.
     pub fn set_caption(&self, path: Option<&Path>, row_width: i32) {
-        let button = row_width - self.clear.get_size().width - GAP;
+        let button = row_width - self.clear.widget().get_size().width - GAP;
         self.caption.set_foreground_color(muted(&self.caption));
         let text = path.map(|p| p.display().to_string()).unwrap_or_default();
         self.caption.set_label(&fit(&self.caption, &text, (button - CAPTION_INSET).max(60)));
@@ -259,6 +416,16 @@ mod tests {
         assert_eq!(baseline_offset(30, 14, 3), 19);
         assert_eq!(baseline_offset(30, 14, 0), 16);
         assert_eq!(baseline_offset(5, 14, 3), 0, "never negative");
+    }
+
+    #[test]
+    fn only_prg_and_vsf_are_source_files_in_any_case() {
+        assert!(is_source_file(Path::new("/a/demo.prg")));
+        assert!(is_source_file(Path::new("/a/DEMO.PRG")));
+        assert!(is_source_file(Path::new("/a/snap.Vsf")));
+        assert!(!is_source_file(Path::new("/a/build.zip")));
+        assert!(!is_source_file(Path::new("/a/song.sid")));
+        assert!(!is_source_file(Path::new("/a/prg")), "no extension");
     }
 
     #[test]
