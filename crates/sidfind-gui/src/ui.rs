@@ -15,8 +15,8 @@ use crate::results::ResultsView;
 use crate::settings_window;
 use crate::theme::{self, Applied, Theme};
 use crate::widgets::{
-    self, GAP, GEAR_SVG, INFO_SVG, PAD, THEME_SVG, TITLE, TextField, TrashButton, baseline_offset, file_name, fit, icon_button, indented,
-    is_source_file, luma, mix, muted, square,
+    self, GAP, GEAR_SVG, INFO_SVG, PAD, THEME_SVG, TITLE, TextField, TrashButton, file_name, fit, icon_button, indented, is_source_file,
+    luma, mix, muted, square,
 };
 
 /// Label of the main button.
@@ -37,8 +37,6 @@ const WINDOW_WIDTH: i32 = 820;
 const START_HEIGHT: i32 = 800;
 /// Narrowest the window can be made.
 const MIN_WIDTH: i32 = 520;
-/// How far the version's grey is pulled toward the window background (0 = system grey).
-const VERSION_FADE: f32 = 0.35;
 // ids of the entries of the theme menu
 const ID_THEME_SYSTEM: i32 = 7001;
 const ID_THEME_LIGHT: i32 = 7002;
@@ -68,8 +66,8 @@ struct Ui {
     panel: Panel,
     settings_button: StaticBitmap,
     theme_button: StaticBitmap,
+    about_button: StaticBitmap,
     logo: StaticBitmap,
-    version: StaticText,
     source: TextField,
     source_browse: Button,
     source_clear: TrashButton,
@@ -93,47 +91,29 @@ pub fn build(theme: Theme) {
     // menu from this File menu; without a menu bar there is no such item.
     #[cfg(target_os = "macos")]
     {
-        let file = Menu::builder().append_item(ID_EXIT, "Quit SidFind\tCtrl+Q", "").build();
+        // wxWidgets moves the About and Quit items into the application menu
+        let file = Menu::builder().append_item(ID_ABOUT, "About SidFind", "").append_item(ID_EXIT, "Quit SidFind\tCtrl+Q", "").build();
         frame.set_menu_bar(MenuBar::builder().append(file, "File").build());
     }
     let panel = Panel::builder(&frame).build();
     let root = BoxSizer::builder(Orientation::Vertical).build();
 
-    // header: the logo with the release version beside it, the author below. The logo is
-    // drawn in the text colour of the current theme (see `refresh_logo`).
+    // header: the logo, drawn in the text colour of the current theme (see `refresh_logo`). The
+    // version, build and author are in the About window (the info icon).
     let head = BoxSizer::builder(Orientation::Horizontal).build();
-    let logo_height = (LOGO_WIDTH as f32 * LOGO_VIEW.1 / LOGO_VIEW.0).round() as i32;
     // StaticBitmap cannot exist without a bitmap: start with an empty one, `refresh_logo` draws the real logo
     let logo = StaticBitmap::builder(&panel).with_bitmap(Bitmap::from_rgba(&[0, 0, 0, 0], 1, 1)).build();
-    // the git commit is shown too, for telling builds apart while debugging
-    let version =
-        StaticText::builder(&panel).with_label(concat!("v ", env!("CARGO_PKG_VERSION"), " (", env!("SIDFIND_GIT_HASH"), ")")).build();
-    let mut version_offset = 0;
-    if let Some(mut font) = version.get_font() {
-        font.set_point_size((font.get_point_size() - 1).max(8));
-        version.set_font(&font);
-        // the version's baseline sits on the bottom edge of the logo, i.e. on the letters' baseline
-        let (size, descent, _) = version.get_full_text_extent("v 0.1.51", Some(&font));
-        version_offset = baseline_offset(logo_height, size.height, descent);
-    }
-    let version_column = BoxSizer::builder(Orientation::Vertical).build();
-    version_column.add_spacer(version_offset);
-    version_column.add(&version, 0, SizerFlag::empty(), 0);
-    let logo_row = BoxSizer::builder(Orientation::Horizontal).build();
-    logo_row.add(&logo, 0, SizerFlag::empty(), 0);
-    logo_row.add_spacer(GAP);
-    logo_row.add_sizer(&version_column, 0, SizerFlag::empty(), 0);
     let titles = BoxSizer::builder(Orientation::Vertical).build();
-    let subtitle = StaticText::builder(&panel).with_label("By Doc Snyder").build();
     titles.add_spacer(12); // air above the logo
-    titles.add_sizer(&logo_row, 0, SizerFlag::Bottom, 8);
-    titles.add(&subtitle, 0, SizerFlag::empty(), 0);
+    titles.add(&logo, 0, SizerFlag::Bottom, 8);
     head.add_sizer(&titles, 1, SizerFlag::AlignCenterVertical, 0);
-    // settings and theme buttons, top right
+    // icon buttons, top right: settings, appearance, about
     let settings_button = icon_button(&panel, GEAR_SVG, 20, "Settings");
     let theme_button = icon_button(&panel, THEME_SVG, 20, "Appearance");
+    let about_button = icon_button(&panel, INFO_SVG, 20, "About SidFind");
     head.add(&settings_button, 0, SizerFlag::AlignCenterVertical | SizerFlag::Right, GAP);
-    head.add(&theme_button, 0, SizerFlag::AlignCenterVertical, 0);
+    head.add(&theme_button, 0, SizerFlag::AlignCenterVertical | SizerFlag::Right, GAP);
+    head.add(&about_button, 0, SizerFlag::AlignCenterVertical, 0);
     root.add_sizer(&head, 0, SizerFlag::Expand | SizerFlag::All, PAD);
 
     // primary action: the source file
@@ -218,8 +198,8 @@ pub fn build(theme: Theme) {
         panel,
         settings_button,
         theme_button,
+        about_button,
         logo,
-        version,
         source,
         source_browse,
         source_clear,
@@ -243,7 +223,7 @@ pub fn build(theme: Theme) {
     // Sizing before that made the window too short, and the bottom row (status and Find SID)
     // was cut off ("Negative content height" in GTK).
     ui.fit_height();
-    // DEBUG (remove after the Linux check): GTK applies the size asynchronously, so fit again shortly after
+    // GTK applies the window size asynchronously: the first fit can read the old size, so fit once more shortly after
     let refit = Timer::new(&frame);
     let again = ui.clone();
     refit.on_tick(move |_| again.fit_height());
@@ -260,6 +240,20 @@ pub fn build(theme: Theme) {
         opener.start(300, true);
         std::mem::forget(opener); // Drop would destroy it before it fires; it lives as long as the app
     }
+}
+
+/// The text colour of the theme as `#rrggbb`: the logo is drawn in it.
+pub fn logo_ink() -> String {
+    let c = SystemSettings::get_colour(SystemColour::WindowText);
+    format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b)
+}
+
+/// The logo drawn in `ink` (`#rrggbb`) for `panel`; None if the SVG cannot be rendered.
+pub fn logo_bitmap(panel: &Panel, ink: &str) -> Option<Bitmap> {
+    // the artwork has no fill of its own (black); give its path one
+    let svg = LOGO_SVG.replacen("<path", &format!("<path fill=\"{ink}\""), 1);
+    let height = (LOGO_WIDTH as f32 * LOGO_VIEW.1 / LOGO_VIEW.0).round() as i32;
+    BitmapBundle::from_svg_text(&svg, Size::new(LOGO_WIDTH, height)).and_then(|b| b.get_bitmap_for(panel))
 }
 
 impl Ui {
@@ -307,6 +301,8 @@ impl Ui {
         self.settings_button.on_mouse_left_up(move |_| ui.open_settings());
         let ui = self.clone();
         self.theme_button.on_mouse_left_up(move |_| ui.show_theme_menu());
+        let ui = self.clone();
+        self.about_button.on_mouse_left_up(move |_| crate::about_window::show(&ui.frame));
         let ui = self.clone();
         self.frame.on_menu_selected(move |event| ui.on_menu(event.get_id()));
 
@@ -418,30 +414,19 @@ impl Ui {
         self.source.set_foreground_color(SystemSettings::get_colour(SystemColour::WindowText));
         self.refresh_caption();
         self.refresh_logo();
-        self.refresh_version();
         self.panel.layout();
     }
 
     /// Draws the logo in the current text colour, when that changed since the last time.
     fn refresh_logo(&self) {
-        let c = SystemSettings::get_colour(SystemColour::WindowText);
-        let ink = format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b);
+        let ink = logo_ink();
         if self.state.borrow().logo_colour == ink {
             return;
         }
-        // the artwork has no fill of its own (black); give its path one
-        let svg = LOGO_SVG.replacen("<path", &format!("<path fill=\"{ink}\""), 1);
-        let height = (LOGO_WIDTH as f32 * LOGO_VIEW.1 / LOGO_VIEW.0).round() as i32;
-        if let Some(bitmap) = BitmapBundle::from_svg_text(&svg, Size::new(LOGO_WIDTH, height)).and_then(|b| b.get_bitmap_for(&self.panel)) {
+        if let Some(bitmap) = logo_bitmap(&self.panel, &ink) {
             self.logo.set_bitmap(&bitmap);
             self.state.borrow_mut().logo_colour = ink;
         }
-    }
-
-    /// The version is a quiet detail: the system grey, pulled toward the window background.
-    fn refresh_version(&self) {
-        let background = self.panel.get_background_color();
-        self.version.set_foreground_color(mix(muted(&self.panel), background, VERSION_FADE));
     }
 
     /// Sets the full-path caption under the source field, cut in the middle to the width of
@@ -473,6 +458,8 @@ impl Ui {
     fn on_menu(&self, id: i32) {
         if id == ID_EXIT {
             self.frame.close(false);
+        } else if id == ID_ABOUT {
+            crate::about_window::show(&self.frame);
         } else {
             self.on_theme_chosen(id);
         }
@@ -586,16 +573,6 @@ impl Ui {
         let bottom = |w: &dyn WxWidget| w.get_position().y + w.get_size().height;
         let missing = bottom(&self.scan).max(bottom(&self.status)) + PAD - self.panel.get_client_size().height;
         let height = self.frame.get_size().height + missing.max(0);
-        // DEBUG (remove after the Linux check)
-        eprintln!(
-            "fit_height: frame {} client {} scan_bottom {} status_bottom {} missing {} -> {}",
-            self.frame.get_size().height,
-            self.panel.get_client_size().height,
-            bottom(&self.scan),
-            bottom(&self.status),
-            missing,
-            height
-        );
         self.frame.set_size(Size::new(width, height));
     }
 }

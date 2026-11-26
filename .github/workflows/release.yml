@@ -25,7 +25,7 @@ jobs:
           - { os: windows-latest, target: x86_64-pc-windows-msvc, test: true }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Add target
         run: rustup target add ${{ matrix.target }}
@@ -63,7 +63,7 @@ jobs:
           Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
           Remove-Item -Recurse "dist/$name"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: sidfind-${{ matrix.target }}
           path: dist/*
@@ -80,7 +80,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Add target
         run: rustup target add ${{ matrix.target }}
@@ -108,7 +108,7 @@ jobs:
           Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
           Remove-Item -Recurse "dist/$name"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: sidfind-gui-${{ matrix.target }}
           path: dist/*
@@ -120,7 +120,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Check that the tag matches the version in Cargo.toml
         env:
@@ -133,7 +133,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: dist
           merge-multiple: true

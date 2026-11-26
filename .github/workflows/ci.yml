@@ -26,7 +26,7 @@ jobs:
         os: [ubuntu-latest, macos-15, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: cargo build --locked --release
       - run: cargo test --locked --release
 
@@ -43,7 +43,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # wxWidgets on Linux is the GTK3 port; these are the headers it is built against
       - name: Install GTK3 development packages (Linux)
@@ -72,7 +72,7 @@ jobs:
         run: |
           mkdir dist
           cp target/release/sidfind-gui dist/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: sidfind-gui-${{ runner.os }}-dev-build
           path: dist/*
