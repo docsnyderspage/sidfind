@@ -7,7 +7,7 @@ use std::rc::Rc;
 use sidfind_core::Identification;
 use wxdragon::prelude::*;
 
-use crate::widgets::{GAP, PAD, file_name, fit, muted, tint_bar};
+use crate::widgets::{Bar, GAP, PAD, file_name, fit};
 
 /// How many matches can be shown (the scan settings' `top` must not exceed this).
 const MAX_ROWS: usize = 10;
@@ -20,10 +20,10 @@ const BETWEEN_ROWS: i32 = 10;
 const WIDEST_PERCENT: &str = "100.0%";
 const WIDEST_SCORE: &str = "score 99999.9";
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct Row {
     panel: Panel,
-    bar: Gauge,
+    bar: Bar,
     percent: StaticText,
     name: StaticText,
     score: StaticText,
@@ -67,17 +67,15 @@ impl ResultsView {
             .map(|_| {
                 // each row is a panel of its own, so hiding it also removes its spacing
                 let row = Panel::builder(&panel).build();
-                let bar = Gauge::builder(&row).with_range(100).with_size(Size::new(BAR_WIDTH, BAR_HEIGHT)).build();
-                tint_bar(&bar);
+                let bar = Bar::new(&row, Size::new(BAR_WIDTH, BAR_HEIGHT));
                 let percent = StaticText::builder(&row).with_label(" ").with_style(StaticTextStyle::AlignRight).build();
                 percent.set_min_size(Size::new(percent_width, -1));
                 let name = StaticText::builder(&row).with_label(" ").build();
                 let score = StaticText::builder(&row).with_label(" ").with_style(StaticTextStyle::AlignRight).build();
                 score.set_min_size(Size::new(score_width, -1));
-                score.set_foreground_color(muted(&row));
 
                 let line = BoxSizer::builder(Orientation::Horizontal).build();
-                line.add(&bar, 0, SizerFlag::AlignCenterVertical, 0);
+                line.add(&bar.panel, 0, SizerFlag::AlignCenterVertical, 0);
                 line.add(&percent, 0, SizerFlag::AlignCenterVertical | SizerFlag::Left, GAP);
                 line.add(&name, 1, SizerFlag::AlignCenterVertical | SizerFlag::Left, GAP);
                 line.add(&score, 0, SizerFlag::AlignCenterVertical | SizerFlag::Left, GAP);

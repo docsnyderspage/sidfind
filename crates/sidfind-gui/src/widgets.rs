@@ -231,15 +231,51 @@ pub fn square(window: &dyn WxWidget, side: i32) {
 }
 
 /// Makes a label bold (the look of a section label).
-/// Colour of the progress bars: the system highlight colour, the same accent the main window uses
-/// for drag and drop, so every bar matches the user's accent (macOS and Windows).
+/// Colour of the progress bars: the blue of the macOS default button (the "Find SID" look). The
+/// system highlight colour is a pale selection blue on macOS, so it is not used here.
 pub fn bar_colour() -> Colour {
-    SystemSettings::get_colour(SystemColour::Highlight)
+    Colour::rgb(0x34, 0x78, 0xf6)
 }
 
-/// Gives a progress bar the accent colour of [`bar_colour`]; Windows draws bars green otherwise.
-pub fn tint_bar(bar: &Gauge) {
-    bar.set_foreground_color(bar_colour());
+/// A progress bar drawn by the app. Windows draws its own gauges green and animates them, and it
+/// ignores the colour set on them, so the bar is painted here: the accent colour on a track.
+#[derive(Clone)]
+pub struct Bar {
+    pub panel: Panel,
+    value: Rc<Cell<i32>>,
+}
+
+impl Bar {
+    pub fn new(parent: &dyn WxWidget, size: Size) -> Self {
+        let panel = Panel::builder(parent).with_size(size).build();
+        panel.set_min_size(size);
+        panel.set_background_style(BackgroundStyle::Paint);
+        let value = Rc::new(Cell::new(0));
+        let (painted, shown) = (panel.clone(), value.clone());
+        panel.on_paint(move |_| {
+            let dc = AutoBufferedPaintDC::new(&painted);
+            let size = painted.get_size();
+            let track = mix(SystemSettings::get_colour(SystemColour::WindowText), SystemSettings::get_colour(SystemColour::Window), 0.85);
+            dc.set_pen(track, 1, PenStyle::Solid);
+            dc.set_brush(track, BrushStyle::Solid);
+            dc.draw_rectangle(0, 0, size.width, size.height);
+            let filled = size.width * shown.get().clamp(0, 100) / 100;
+            dc.set_pen(bar_colour(), 1, PenStyle::Solid);
+            dc.set_brush(bar_colour(), BrushStyle::Solid);
+            dc.draw_rectangle(0, 0, filled, size.height);
+        });
+        Bar { panel, value }
+    }
+
+    /// Sets the fill, 0 to 100 percent.
+    pub fn set_value(&self, percent: i32) {
+        self.value.set(percent);
+        self.panel.refresh(false, None);
+    }
+
+    pub fn show(&self, on: bool) {
+        self.panel.show(on);
+    }
 }
 
 pub fn make_bold(text: &StaticText) {
@@ -256,7 +292,7 @@ pub fn hyperlink(panel: &Panel, text: &str, url: &str) -> StaticText {
     // the accent is pale on a light background (macOS selection blue), so links use a deeper blue there
     // dark mode is told by the system text colour (light text), not by the panel's own background
     let dark = luma(SystemSettings::get_colour(SystemColour::WindowText)) > 128.0;
-    let colour = if dark { bar_colour() } else { Colour::rgb(0, 84, 200) };
+    let colour = if dark { SystemSettings::get_colour(SystemColour::Highlight) } else { Colour::rgb(0, 84, 200) };
     link.set_foreground_color(colour);
     if let Some(mut font) = link.get_font() {
         font.set_underlined(true);

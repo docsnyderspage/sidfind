@@ -10,7 +10,7 @@ use wxdragon::prelude::*;
 
 use crate::job::{Job, Outcome};
 use crate::prefs::Prefs;
-use crate::widgets::{GAP, PAD, PathSetting, TITLE, grow, headline, hyperlink, tint_bar};
+use crate::widgets::{Bar, GAP, PAD, PathSetting, TITLE, grow, headline, hyperlink};
 
 const TICK_MS: i32 = 100;
 /// Where to get the HVSC collection.
@@ -27,7 +27,7 @@ struct Win {
     index: PathSetting,
     build: Button,
     hint: StaticText,
-    gauge: Gauge,
+    gauge: Bar,
     status: StaticText,
     timer: Rc<Timer<Dialog>>,
     prefs: Rc<RefCell<Prefs>>,
@@ -69,10 +69,9 @@ pub fn show(parent: &Frame, prefs: &Rc<RefCell<Prefs>>) {
     root.add_sizer(&build_row, 0, SizerFlag::Expand | SizerFlag::All, PAD);
 
     // progress and the outcome stay hidden until a build starts
-    let gauge = Gauge::builder(&panel).with_range(100).build();
-    tint_bar(&gauge);
+    let gauge = Bar::new(&panel, Size::new(-1, 18));
     let status = StaticText::builder(&panel).with_label(" ").build();
-    root.add(&gauge, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom, PAD);
+    root.add(&gauge.panel, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom, PAD);
     root.add(&status, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom, PAD);
     gauge.show(false);
     status.show(false);

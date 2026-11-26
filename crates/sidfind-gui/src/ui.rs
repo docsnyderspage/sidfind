@@ -33,6 +33,8 @@ const LOGO_WIDTH: i32 = 236;
 /// Width of the window at startup. Wide enough that a typical result line (match share, score
 /// and the tune's path in HVSC) fits without wrapping; it can still be resized.
 const WINDOW_WIDTH: i32 = 820;
+/// Height of the window before it is fitted to its content.
+const START_HEIGHT: i32 = 800;
 /// Narrowest the window can be made.
 const MIN_WIDTH: i32 = 520;
 /// How far the version's grey is pulled toward the window background (0 = system grey).
@@ -79,14 +81,16 @@ struct Ui {
     info: StaticBitmap,
     status: StaticText,
     scan: Button,
-    gauge: Gauge,
+    gauge: widgets::Bar,
     results: ResultsView,
     timer: Rc<Timer<Frame>>,
     state: Rc<RefCell<State>>,
 }
 
 pub fn build(theme: Theme) {
-    let frame = Frame::builder().with_title(TITLE).with_size(Size::new(WINDOW_WIDTH, 640)).build();
+    // generous on purpose: GTK lays the window out at its first show, and a window that is too short
+    // squeezes the buttons ("Negative content height"). fit_height sets the final height afterwards.
+    let frame = Frame::builder().with_title(TITLE).with_size(Size::new(WINDOW_WIDTH, START_HEIGHT)).build();
     // macOS quits with Cmd-Q through the Quit item that wxWidgets moves into the application
     // menu from this File menu; without a menu bar there is no such item.
     #[cfg(target_os = "macos")]
@@ -128,8 +132,8 @@ pub fn build(theme: Theme) {
     // settings and theme buttons, top right
     let settings_button = icon_button(&panel, GEAR_SVG, 20, "Settings");
     let theme_button = icon_button(&panel, THEME_SVG, 20, "Appearance");
-    head.add(&settings_button, 0, SizerFlag::Right, GAP);
-    head.add(&theme_button, 0, SizerFlag::empty(), 0);
+    head.add(&settings_button, 0, SizerFlag::AlignCenterVertical | SizerFlag::Right, GAP);
+    head.add(&theme_button, 0, SizerFlag::AlignCenterVertical, 0);
     root.add_sizer(&head, 0, SizerFlag::Expand | SizerFlag::All, PAD);
 
     // primary action: the source file
@@ -146,8 +150,6 @@ pub fn build(theme: Theme) {
     let side = widgets::tall(&source_browse);
     source.panel.set_min_size(Size::new(-1, side));
     let source_clear = TrashButton::new(&panel, "Clear source file");
-    square(&settings_button, side);
-    square(&theme_button, side);
     square(source_clear.widget(), side);
     let source_row = BoxSizer::builder(Orientation::Horizontal).build();
     source_row.add(&source.panel, 1, SizerFlag::Expand | SizerFlag::AlignCenterVertical, 0);
@@ -188,9 +190,8 @@ pub fn build(theme: Theme) {
     root.add_sizer(&actions, 0, SizerFlag::Expand | SizerFlag::All, PAD);
 
     // progress and results stay hidden (no empty space) until first needed
-    let gauge = Gauge::builder(&panel).with_range(100).build();
-    widgets::tint_bar(&gauge);
-    root.add(&gauge, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom, PAD);
+    let gauge = widgets::Bar::new(&panel, Size::new(-1, 18));
+    root.add(&gauge.panel, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom, PAD);
     let results = ResultsView::new(&panel);
     root.add(&results.panel, 1, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom, PAD);
     gauge.show(false);
@@ -573,7 +574,12 @@ impl Ui {
         self.panel.layout();
         let width = self.frame.get_size().width;
         self.frame.fit();
-        let height = self.frame.get_size().height;
+        // GTK can size the window too short, and the bottom row (status, Find SID) then falls
+        // off the bottom edge. The laid-out bottom edge of that row tells how much is missing.
+        self.panel.layout();
+        let bottom = |w: &dyn WxWidget| w.get_position().y + w.get_size().height;
+        let missing = bottom(&self.scan).max(bottom(&self.status)) + PAD - self.panel.get_client_size().height;
+        let height = self.frame.get_size().height + missing.max(0);
         self.frame.set_size(Size::new(width, height));
     }
 }
