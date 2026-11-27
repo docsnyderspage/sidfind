@@ -286,7 +286,7 @@ pub fn build(theme: Theme) {
         gauge_shown: false,
         results_shown: false,
         theme,
-        field_colour: SystemSettings::get_colour(SystemColour::Window),
+        field_colour: field_background(),
         logo_colour: String::new(),
     };
 
@@ -343,6 +343,18 @@ pub fn build(theme: Theme) {
 pub fn logo_ink() -> String {
     let c = SystemSettings::get_colour(SystemColour::WindowText);
     format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b)
+}
+
+/// The background of the input fields. On a dark theme it is a step lighter than the window, so the
+/// field stays visible (Windows dark mode paints the window and the field in the same colour).
+fn field_background() -> Colour {
+    let window = SystemSettings::get_colour(SystemColour::Window);
+    let text = SystemSettings::get_colour(SystemColour::WindowText);
+    if luma(text) > 128.0 {
+        mix(window, text, 0.12)
+    } else {
+        window
+    }
 }
 
 /// The logo drawn in `ink` (`#rrggbb`) for `panel`; None if the SVG cannot be rendered.
@@ -557,7 +569,7 @@ impl Ui {
         self.status
             .set_tooltip(&tunes.map(|p| p.display().to_string()).unwrap_or_default());
         // the field is coloured explicitly: on Windows in dark mode it would stay white
-        let field = SystemSettings::get_colour(SystemColour::Window);
+        let field = field_background();
         self.state.borrow_mut().field_colour = field;
         self.source.set_background_color(field);
         self.source

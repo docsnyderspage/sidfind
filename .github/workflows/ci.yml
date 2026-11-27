@@ -72,7 +72,7 @@ jobs:
         run: |
           mkdir dist
           cp target/release/sidfind-gui dist/
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: sidfind-gui-${{ runner.os }}-dev-build
           path: dist/*

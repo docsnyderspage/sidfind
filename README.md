@@ -46,10 +46,6 @@ The desktop app is a separate download:
 
 For macOS there is no prebuilt desktop app yet; build it yourself (see [Building](#building)).
 
-On Linux the archive also contains `install.sh`. It is optional: run it from the unpacked folder to add SidFind
-to your application menu with its icon (no root needed). Run `./install.sh --uninstall` to remove the entry again.
-Without it, `sidfind-gui` still runs, but the file manager and menu show a generic icon.
-
 The binaries are not code-signed, so your OS may warn about them: on macOS run `xattr -d com.apple.quarantine sidfind`
 once if a browser-downloaded copy is blocked, and on Windows choose "More info" and then "Run anyway" in SmartScreen.
 Or build it yourself, as described below.
