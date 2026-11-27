@@ -204,6 +204,30 @@ fn report(found: &Identification) {
         return;
     }
     for m in &found.matches {
-        println!("   {:>5.1}% of tune data found, score {:>7.1}  /{}", 100.0 * m.share, m.score, m.name);
+        println!("   {} {:>5.1}% of tune data found, score {:>7.1}  /{}", bar(m.share), 100.0 * m.share, m.score, m.name);
+    }
+}
+
+/// A bar of 20 characters for `share` (0 to 1): `|` for the part found, a space for the rest.
+fn bar(share: f64) -> String {
+    const BAR_CELLS: usize = 20;
+    let filled = (share.clamp(0.0, 1.0) * BAR_CELLS as f64).round() as usize;
+    format!("{}{}", "|".repeat(filled), " ".repeat(BAR_CELLS - filled))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bar;
+
+    #[test]
+    fn bar_rounds_to_cells_and_keeps_its_width() {
+        assert_eq!(bar(0.0), " ".repeat(20));
+        assert_eq!(bar(1.0), "|".repeat(20));
+        assert_eq!(bar(0.5), format!("{}{}", "|".repeat(10), " ".repeat(10)));
+        assert_eq!(bar(0.02), " ".repeat(20));
+        assert_eq!(bar(0.06), format!("|{}", " ".repeat(19)));
+        for share in [0.013, 0.31, 0.655, 0.9999] {
+            assert_eq!(bar(share).len(), 20, "{share}");
+        }
     }
 }

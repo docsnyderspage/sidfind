@@ -1,7 +1,7 @@
 //! The settings window: HVSC folder, index file and building an index. It is modal, so the
 //! main window waits; changes are saved as they are made and shared through `Prefs`.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -34,6 +34,8 @@ struct Win {
     /// The index build in progress, if any.
     job: Rc<RefCell<Option<Job>>>,
     gauge_shown: Rc<RefCell<bool>>,
+    /// The percent last written to the status line while a build runs.
+    shown_percent: Cell<i32>,
 }
 
 /// Shows the settings window and returns when it is closed. A build still running at that
@@ -138,6 +140,7 @@ pub fn show(parent: &Frame, prefs: &Rc<RefCell<Prefs>>) {
         prefs: prefs.clone(),
         job: Rc::new(RefCell::new(None)),
         gauge_shown: Rc::new(RefCell::new(false)),
+        shown_percent: Cell::new(0),
     };
     win.connect(close);
     win.sync();
@@ -276,6 +279,7 @@ impl Win {
         self.reveal();
         self.gauge.set_value(0);
         self.status.set_label("Building the index...");
+        self.shown_percent.set(0);
         *self.job.borrow_mut() = Some(Job::build(hvsc, path));
         self.timer.start(TICK_MS, false);
         self.sync();
@@ -300,7 +304,13 @@ impl Win {
             None => return,
         };
         self.gauge.set_value(percent);
-        let Some(result) = result else { return };
+        let Some(result) = result else {
+            // the text only changes when the whole percent does: no redraw 10 times a second
+            if self.shown_percent.replace(percent) != percent {
+                self.status.set_label(&format!("Building the index... {percent}%"));
+            }
+            return;
+        };
 
         self.timer.stop();
         *self.job.borrow_mut() = None;

@@ -53,7 +53,7 @@ pub const INFO_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="16
 /// Trash-can icon as inline SVG. Mid-grey reads on both light and dark backgrounds.
 fn trash_svg(colour: &str, opacity: f32) -> String {
     format!(
-        r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{colour}" stroke-opacity="{opacity}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 10v6M14 10v6"/></svg>"##
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{colour}" stroke-opacity="{opacity}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 10v6M14 10v6"/></svg>"##
     )
 }
 
@@ -106,7 +106,7 @@ pub struct TrashButton {
 
 /// The trash icon in `colour` (an SVG colour) at `opacity`.
 fn trash_bitmap(window: &dyn WxWidget, colour: &str, opacity: f32) -> Option<Bitmap> {
-    BitmapBundle::from_svg_text(&trash_svg(colour, opacity), Size::new(16, 16))
+    BitmapBundle::from_svg_text(&trash_svg(colour, opacity), Size::new(20, 20))
         .and_then(|b| b.get_bitmap_for(window))
 }
 
