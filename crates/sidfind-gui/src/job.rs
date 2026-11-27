@@ -1,6 +1,7 @@
 //! Background work. The core runs on a worker thread; the UI thread only reads atomics and a
 //! result slot (polled by a timer), so no widget is ever touched from another thread.
 
+use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -54,7 +55,9 @@ impl Job {
                 cancel: Some(&cancel),
                 notice: None,
             };
-            let outcome = work(&ctl);
+            // a panic must still produce a result, or the UI would wait for it forever
+            let outcome = panic::catch_unwind(AssertUnwindSafe(|| work(&ctl)))
+                .unwrap_or_else(|_| Err("internal error: the background job crashed".into()));
             *result.lock().unwrap() = Some(outcome);
         });
         job
@@ -189,6 +192,12 @@ mod tests {
         }
         assert!(!dir.join("cancelled.idx.tmp").exists());
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_crashing_job_still_reports_a_result() {
+        let job = Job::spawn(|_| panic!("boom"));
+        assert!(wait(&job).err().unwrap().starts_with("internal error"));
     }
 
     #[test]
