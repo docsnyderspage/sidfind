@@ -2,7 +2,8 @@ name: Release
 
 # Push a tag such as v0.1.0 (it must match the version in Cargo.toml; a suffix like -rc1 is
 # allowed and makes it a pre-release) to build binaries for all platforms and publish them
-# as a GitHub release.
+# as a GitHub release. One archive per platform: the command line tool, and the desktop app
+# where it is built (not for Intel Macs; see the README).
 on:
   push:
     tags: ["v*"]
@@ -17,77 +18,21 @@ jobs:
       matrix:
         include:
           # Linux is built on the oldest runner image so the binaries work with older glibc.
-          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, test: true }
-          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu, test: true }
-          - { os: macos-15, target: aarch64-apple-darwin, test: true }
-          # built on the arm runner, so it cannot be tested there
-          - { os: macos-15, target: x86_64-apple-darwin, test: false }
-          - { os: windows-latest, target: x86_64-pc-windows-msvc, test: true }
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Add target
-        run: rustup target add ${{ matrix.target }}
-
-      - name: Test
-        if: matrix.test
-        run: cargo test --locked --release --target ${{ matrix.target }}
-
-      - name: Build
-        run: cargo build --locked --release --target ${{ matrix.target }}
-
-      - name: Package (Linux, macOS)
-        if: runner.os != 'Windows'
-        shell: bash
-        env:
-          TAG: ${{ github.ref_name }}
-          TARGET: ${{ matrix.target }}
-        run: |
-          name="sidfind-${TAG}-${TARGET}"
-          mkdir -p "dist/${name}"
-          cp "target/${TARGET}/release/sidfind" LICENSE README.md "dist/${name}/"
-          tar -czf "dist/${name}.tar.gz" -C dist "${name}"
-          rm -r "dist/${name}"
-
-      - name: Package (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          TAG: ${{ github.ref_name }}
-          TARGET: ${{ matrix.target }}
-        run: |
-          $name = "sidfind-$env:TAG-$env:TARGET"
-          New-Item -ItemType Directory -Path "dist/$name" | Out-Null
-          Copy-Item "target/$env:TARGET/release/sidfind.exe", LICENSE, README.md -Destination "dist/$name"
-          Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
-          Remove-Item -Recurse "dist/$name"
-
-      - uses: actions/upload-artifact@v6
-        with:
-          name: sidfind-${{ matrix.target }}
-          path: dist/*
-          if-no-files-found: error
-
-  # The desktop GUI, one archive per platform next to the command line archives. It has its own
-  # job because it builds wxWidgets (minutes, not seconds) and needs the C++ toolchain.
-  build-gui:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: windows-latest, target: x86_64-pc-windows-msvc }
-          # same runner as the command line Linux builds above (glibc compatibility)
-          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
-          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu }
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, test: true, gui: true }
+          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu, test: true, gui: true }
+          - { os: macos-15, target: aarch64-apple-darwin, test: true, gui: true }
+          # the Intel runner (the image is available until about August 2027); the desktop app is
+          # not built for Intel Macs, so this archive has the command line tool only
+          - { os: macos-15-intel, target: x86_64-apple-darwin, test: true, gui: false }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, test: true, gui: true }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
 
       # wxWidgets on Linux is the GTK3 port; these are the headers it is built against
-      - name: Install GTK3 development packages (Linux)
-        if: runner.os == 'Linux'
+      - name: Install GTK3 development packages (Linux desktop app)
+        if: runner.os == 'Linux' && matrix.gui
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -99,26 +44,70 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: gui-${{ matrix.target }}
+          key: ${{ matrix.target }}-${{ matrix.gui }}
 
       - name: Test
+        if: matrix.test
+        run: cargo test --locked --release --target ${{ matrix.target }}
+
+      - name: Test (desktop app)
+        if: matrix.test && matrix.gui
         run: cargo test --locked --release -p sidfind-gui --target ${{ matrix.target }}
 
       - name: Build
+        run: cargo build --locked --release --target ${{ matrix.target }}
+
+      # the desktop app builds wxWidgets (minutes, not seconds) and needs the C++ toolchain
+      - name: Build (desktop app)
+        if: matrix.gui
         run: cargo build --locked --release -p sidfind-gui --target ${{ matrix.target }}
 
-      - name: Package (Linux)
-        if: runner.os == 'Linux'
+      - name: Package (Linux, macOS)
+        if: runner.os != 'Windows'
         shell: bash
         env:
           TAG: ${{ github.ref_name }}
           TARGET: ${{ matrix.target }}
+          GUI: ${{ matrix.gui }}
+          OS_NAME: ${{ runner.os }}
         run: |
-          name="sidfind-gui-${TAG}-${TARGET}"
-          mkdir -p "dist/${name}"
-          cp "target/${TARGET}/release/sidfind-gui" LICENSE README.md "dist/${name}/"
+          name="sidfind-${TAG}-${TARGET}"
+          dir="dist/${name}"
+          mkdir -p "$dir"
+          cp "target/${TARGET}/release/sidfind" LICENSE README.md "$dir/"
+          if [ "$GUI" = "true" ]; then
+            if [ "$OS_NAME" = "macOS" ]; then
+              # the desktop app as an application bundle; the icon comes from assets/icons
+              app="$dir/SidFind.app/Contents"
+              mkdir -p "$app/MacOS" "$app/Resources"
+              cp "target/${TARGET}/release/sidfind-gui" "$app/MacOS/"
+              cp assets/icons/sidfind.icns "$app/Resources/"
+              version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+              cat > "$app/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>SidFind</string>
+            <key>CFBundleDisplayName</key><string>SidFind</string>
+            <key>CFBundleIdentifier</key><string>io.github.docsnyderspage.sidfind</string>
+            <key>CFBundleExecutable</key><string>sidfind-gui</string>
+            <key>CFBundleIconFile</key><string>sidfind</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>${version}</string>
+            <key>CFBundleVersion</key><string>${version}</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+            <key>NSPrincipalClass</key><string>NSApplication</string>
+          </dict>
+          </plist>
+          EOF
+            else
+              cp "target/${TARGET}/release/sidfind-gui" "$dir/"
+            fi
+          fi
           tar -czf "dist/${name}.tar.gz" -C dist "${name}"
-          rm -r "dist/${name}"
+          rm -r "$dir"
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
@@ -126,21 +115,24 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
           TARGET: ${{ matrix.target }}
+          GUI: ${{ matrix.gui }}
         run: |
-          $name = "sidfind-gui-$env:TAG-$env:TARGET"
+          $name = "sidfind-$env:TAG-$env:TARGET"
           New-Item -ItemType Directory -Path "dist/$name" | Out-Null
-          Copy-Item "target/$env:TARGET/release/sidfind-gui.exe", LICENSE, README.md -Destination "dist/$name"
+          $files = @("target/$env:TARGET/release/sidfind.exe", "LICENSE", "README.md")
+          if ($env:GUI -eq "true") { $files += "target/$env:TARGET/release/sidfind-gui.exe" }
+          Copy-Item $files -Destination "dist/$name"
           Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
           Remove-Item -Recurse "dist/$name"
 
       - uses: actions/upload-artifact@v6
         with:
-          name: sidfind-gui-${{ matrix.target }}
+          name: sidfind-${{ matrix.target }}
           path: dist/*
           if-no-files-found: error
 
   release:
-    needs: [build, build-gui]
+    needs: [build]
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -33,21 +33,17 @@ Prebuilt binaries are attached to each [release](../../releases) (no Rust needed
 | macOS (Apple silicon) | `sidfind-<version>-aarch64-apple-darwin.tar.gz` |
 | macOS (Intel) | `sidfind-<version>-x86_64-apple-darwin.tar.gz` |
 
-Each archive contains the `sidfind` program, this README and the license. `SHA256SUMS.txt` lets you verify the downloads.
-`sidfind` is a command line tool: unpack it and run it from a terminal (see [Usage](#usage)).
+Each archive contains the command line tool `sidfind`, this README and the license. Apart from the Intel Mac archive,
+it also contains the desktop app `sidfind-gui` (on macOS as `SidFind.app`, which you can drag into Applications).
+The Intel Mac archive has the command line tool only: the desktop app is not built for Intel Macs. Use the
+command line tool there, or build the app yourself (see [Building](#building)).
 
-The desktop app is a separate download:
+`SHA256SUMS.txt` lets you verify the downloads. `sidfind` is a command line tool: unpack it and run it from a
+terminal (see [Usage](#usage)). `sidfind-gui` starts from the file manager or a terminal.
 
-| Platform | File |
-|---|---|
-| Windows (64-bit) | `sidfind-gui-<version>-x86_64-pc-windows-msvc.zip` |
-| Linux (64-bit Intel/AMD) | `sidfind-gui-<version>-x86_64-unknown-linux-gnu.tar.gz` |
-| Linux (64-bit ARM) | `sidfind-gui-<version>-aarch64-unknown-linux-gnu.tar.gz` |
-
-For macOS there is no prebuilt desktop app yet; build it yourself (see [Building](#building)).
-
-The binaries are not code-signed, so your OS may warn about them: on macOS run `xattr -d com.apple.quarantine sidfind`
-once if a browser-downloaded copy is blocked, and on Windows choose "More info" and then "Run anyway" in SmartScreen.
+The binaries are not code-signed, so your OS may warn about them. On macOS, if a browser-downloaded copy is blocked, run
+`xattr -d com.apple.quarantine sidfind` once for the command line tool, and `xattr -dr com.apple.quarantine SidFind.app`
+for the desktop app (the `-r` is needed for the bundle). On Windows choose "More info" and then "Run anyway" in SmartScreen.
 Or build it yourself, as described below.
 
 
@@ -58,7 +54,9 @@ You need a copy of HVSC (the folder that contains `DEMOS`, `GAMES` and `MUSICIAN
 
 ### The desktop app
 
-Start `sidfind-gui` (no installation needed). Screenshots will follow.
+Start `sidfind-gui` (no installation needed).
+
+![The desktop app on macOS, dark theme, after a scan](docs/screenshots/main-window.png)
 
 1. **First run:** the Settings window opens. Choose your **HVSC folder** (it has a link to the download page).
    Settings are saved and remembered the next time. You can open them again with the gear icon.
@@ -74,7 +72,10 @@ Start `sidfind-gui` (no installation needed). Screenshots will follow.
    manually.
 
 The half-circle icon opens the **Appearance** menu: follow the system, light or dark (on Windows a change applies the
-next time the app starts).
+next time the app starts). On Linux the menu has no effect: the GTK toolkit takes the look from your desktop. To get
+dark mode, choose a dark GTK theme in your desktop settings, or start the app with
+`GTK_THEME=<name of an installed dark GTK theme>`. (`SIDFIND_THEME=light|dark|system` also sets the look, but it is
+meant for testing.)
 
 The app and the command line tool use the same matching code and give the same results. Their settings are
 separate, but both understand `SIDFIND_HVSC` and `SIDFIND_INDEX` (see
@@ -84,6 +85,8 @@ setting wins over them.
 ### The command line tool
 
 There are two ways to use it, and you choose.
+
+![The command line tool showing a scan](docs/screenshots/cli-tool.png)
 
 #### Option 1: read HVSC on every run (no setup)
 

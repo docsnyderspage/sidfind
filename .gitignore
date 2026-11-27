@@ -21,6 +21,7 @@
 
 # Misc
 scripts
+assets/_src
 
 # OS junk
 .DS_Store

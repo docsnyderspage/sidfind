@@ -320,6 +320,9 @@ pub fn build(theme: Theme) {
     // Sizing before that made the window too short, and the bottom row (status and Find SID)
     // was cut off ("Negative content height" in GTK).
     ui.fit_height();
+    // no control has the keyboard focus at start: otherwise the first one (the scan mode radio
+    // button) is selected visibly with a focus frame. Tab still moves into the window.
+    panel.set_focus();
     // GTK applies the window size asynchronously: the first fit can read the old size, so fit once more shortly after
     let refit = Timer::new(&frame);
     let again = ui.clone();
