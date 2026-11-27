@@ -62,23 +62,22 @@ jobs:
         if: matrix.gui
         run: cargo build --locked --release -p sidfind-gui --target ${{ matrix.target }}
 
-      - name: Package (Linux, macOS)
+      # The files are staged unpacked: the artifact is zipped by GitHub anyway, so an archive
+      # inside it would be nested. The release job makes the final archives.
+      - name: Stage files (Linux, macOS)
         if: runner.os != 'Windows'
         shell: bash
         env:
-          TAG: ${{ github.ref_name }}
           TARGET: ${{ matrix.target }}
           GUI: ${{ matrix.gui }}
           OS_NAME: ${{ runner.os }}
         run: |
-          name="sidfind-${TAG}-${TARGET}"
-          dir="dist/${name}"
-          mkdir -p "$dir"
-          cp "target/${TARGET}/release/sidfind" LICENSE README.md "$dir/"
+          mkdir -p stage
+          cp "target/${TARGET}/release/sidfind" LICENSE README.md stage/
           if [ "$GUI" = "true" ]; then
             if [ "$OS_NAME" = "macOS" ]; then
               # the desktop app as an application bundle; the icon comes from assets/icons
-              app="$dir/SidFind.app/Contents"
+              app="stage/SidFind.app/Contents"
               mkdir -p "$app/MacOS" "$app/Resources"
               cp "target/${TARGET}/release/sidfind-gui" "$app/MacOS/"
               cp assets/icons/sidfind.icns "$app/Resources/"
@@ -103,32 +102,26 @@ jobs:
           </plist>
           EOF
             else
-              cp "target/${TARGET}/release/sidfind-gui" "$dir/"
+              cp "target/${TARGET}/release/sidfind-gui" stage/
             fi
           fi
-          tar -czf "dist/${name}.tar.gz" -C dist "${name}"
-          rm -r "$dir"
 
-      - name: Package (Windows)
+      - name: Stage files (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         env:
-          TAG: ${{ github.ref_name }}
           TARGET: ${{ matrix.target }}
           GUI: ${{ matrix.gui }}
         run: |
-          $name = "sidfind-$env:TAG-$env:TARGET"
-          New-Item -ItemType Directory -Path "dist/$name" | Out-Null
+          New-Item -ItemType Directory -Path stage | Out-Null
           $files = @("target/$env:TARGET/release/sidfind.exe", "LICENSE", "README.md")
           if ($env:GUI -eq "true") { $files += "target/$env:TARGET/release/sidfind-gui.exe" }
-          Copy-Item $files -Destination "dist/$name"
-          Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
-          Remove-Item -Recurse "dist/$name"
+          Copy-Item $files -Destination stage
 
       - uses: actions/upload-artifact@v6
         with:
           name: sidfind-${{ matrix.target }}
-          path: dist/*
+          path: stage/*
           if-no-files-found: error
 
   release:
@@ -152,8 +145,33 @@ jobs:
 
       - uses: actions/download-artifact@v7
         with:
-          path: dist
-          merge-multiple: true
+          pattern: sidfind-*
+          path: artifacts
+
+      - name: Make the archives
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p dist
+          for dir in artifacts/sidfind-*/; do
+            dir=${dir%/}
+            target=${dir#artifacts/sidfind-}
+            name="sidfind-${TAG}-${target}"
+            # the artifacts may lose the file permissions, so the programs are made executable again
+            for f in sidfind sidfind-gui; do
+              if [ -f "$dir/$f" ]; then chmod +x "$dir/$f"; fi
+            done
+            if [ -f "$dir/SidFind.app/Contents/MacOS/sidfind-gui" ]; then
+              chmod +x "$dir/SidFind.app/Contents/MacOS/sidfind-gui"
+            fi
+            mv "$dir" "dist/$name"
+            case "$target" in
+              *windows*) (cd dist && zip -qr "$name.zip" "$name") ;;
+              *) tar -czf "dist/$name.tar.gz" -C dist "$name" ;;
+            esac
+            rm -r "dist/$name"
+          done
+          ls -l dist
 
       - name: Checksums
         run: cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
