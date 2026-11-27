@@ -41,10 +41,20 @@ command line tool there, or build the app yourself (see [Building](#building)).
 `SHA256SUMS.txt` lets you verify the downloads. `sidfind` is a command line tool: unpack it and run it from a
 terminal (see [Usage](#usage)). `sidfind-gui` starts from the file manager or a terminal.
 
-The binaries are not code-signed, so your OS may warn about them. On macOS, if a browser-downloaded copy is blocked, run
-`xattr -d com.apple.quarantine sidfind` once for the command line tool, and `xattr -dr com.apple.quarantine SidFind.app`
-for the desktop app (the `-r` is needed for the bundle). On Windows choose "More info" and then "Run anyway" in SmartScreen.
-Or build it yourself, as described below.
+### Important note on macOS
+
+If macOS says that **SidFind is damaged and can't be opened**, the app is not broken. The message appears because the
+download is quarantined and the app is not signed by Apple. Do not move it to the Bin. Remove the quarantine flag
+once in Terminal, then open the app as usual:
+
+```
+xattr -dr com.apple.quarantine /Applications/SidFind.app     # or the path where you put SidFind.app
+```
+
+For the command line tool, use `xattr -d com.apple.quarantine sidfind` (no `-r`, that is only for the app bundle).
+
+The binaries are not code-signed, so your OS may warn about them. On Windows choose "More info" and then "Run anyway" in
+SmartScreen. Or build it yourself, as described below.
 
 
 ## Usage
@@ -268,7 +278,7 @@ RAM of a machine that has run, so the demo is unpacked. That RAM is used as it i
 
 ## Changelog
 
-### Unreleased
+### 0.2.0 (2026-11-27)
 
 - New desktop app, `sidfind-gui`, with native windows on macOS, Windows and Linux: drag and drop a PRG or VICE
   snapshot, scan on the fly or with an index, build the index from a settings window, light and dark appearance.
