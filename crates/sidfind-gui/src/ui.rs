@@ -15,8 +15,8 @@ use crate::results::ResultsView;
 use crate::settings_window;
 use crate::theme::{self, Applied, Theme};
 use crate::widgets::{
-    self, GAP, GEAR_SVG, INFO_SVG, PAD, THEME_SVG, TITLE, TextField, TrashButton, file_name, fit, icon_button, indented, is_source_file,
-    luma, mix, muted, square,
+    self, GAP, GEAR_SVG, INFO_SVG, PAD, THEME_SVG, TITLE, TextField, TrashButton, file_name, fit,
+    icon_button, indented, is_source_file, luma, mix, muted, square,
 };
 
 /// Label of the main button.
@@ -26,6 +26,8 @@ const TICK_MS: i32 = 100;
 /// The logo (assets/logo.svg): shapes only, no text, so it needs no font. It fills its
 /// drawing area, so the bottom of the letters is the bottom edge of the image.
 const LOGO_SVG: &str = include_str!("../../../assets/logo.svg");
+/// The app icon master (assets/icons/app.svg), shown in the title bar of the windows.
+const APP_ICON_SVG: &str = include_str!("../../../assets/icons/app.svg");
 /// The drawing area of the logo (its viewBox), which fixes its proportions.
 const LOGO_VIEW: (f32, f32) = (165.53185, 19.608799);
 /// Width of the logo in the header, in logical pixels; the height follows from the proportions.
@@ -86,13 +88,25 @@ struct Ui {
 pub fn build(theme: Theme) {
     // generous on purpose: GTK lays the window out at its first show, and a window that is too short
     // squeezes the buttons ("Negative content height"). fit_height sets the final height afterwards.
-    let frame = Frame::builder().with_title(TITLE).with_size(Size::new(WINDOW_WIDTH, START_HEIGHT)).build();
+    let frame = Frame::builder()
+        .with_title(TITLE)
+        .with_size(Size::new(WINDOW_WIDTH, START_HEIGHT))
+        .build();
+    // without this the title bar shows the generic icon (Windows does not use the exe icon there)
+    if let Some(icon) = BitmapBundle::from_svg_text(APP_ICON_SVG, Size::new(32, 32))
+        .and_then(|b| b.get_bitmap_for(&frame))
+    {
+        frame.set_icon(&icon);
+    }
     // macOS quits with Cmd-Q through the Quit item that wxWidgets moves into the application
     // menu from this File menu; without a menu bar there is no such item.
     #[cfg(target_os = "macos")]
     {
         // wxWidgets moves the About and Quit items into the application menu
-        let file = Menu::builder().append_item(ID_ABOUT, "About SidFind", "").append_item(ID_EXIT, "Quit SidFind\tCtrl+Q", "").build();
+        let file = Menu::builder()
+            .append_item(ID_ABOUT, "About SidFind", "")
+            .append_item(ID_EXIT, "Quit SidFind\tCtrl+Q", "")
+            .build();
         frame.set_menu_bar(MenuBar::builder().append(file, "File").build());
     }
     let panel = Panel::builder(&frame).build();
@@ -102,7 +116,9 @@ pub fn build(theme: Theme) {
     // version, build and author are in the About window (the info icon).
     let head = BoxSizer::builder(Orientation::Horizontal).build();
     // StaticBitmap cannot exist without a bitmap: start with an empty one, `refresh_logo` draws the real logo
-    let logo = StaticBitmap::builder(&panel).with_bitmap(Bitmap::from_rgba(&[0, 0, 0, 0], 1, 1)).build();
+    let logo = StaticBitmap::builder(&panel)
+        .with_bitmap(Bitmap::from_rgba(&[0, 0, 0, 0], 1, 1))
+        .build();
     let titles = BoxSizer::builder(Orientation::Vertical).build();
     titles.add_spacer(12); // air above the logo
     titles.add(&logo, 0, SizerFlag::Bottom, 8);
@@ -111,13 +127,25 @@ pub fn build(theme: Theme) {
     let settings_button = icon_button(&panel, GEAR_SVG, 20, "Settings");
     let theme_button = icon_button(&panel, THEME_SVG, 20, "Appearance");
     let about_button = icon_button(&panel, INFO_SVG, 20, "About SidFind");
-    head.add(&settings_button, 0, SizerFlag::AlignCenterVertical | SizerFlag::Right, GAP);
-    head.add(&theme_button, 0, SizerFlag::AlignCenterVertical | SizerFlag::Right, GAP);
+    head.add(
+        &settings_button,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::Right,
+        GAP,
+    );
+    head.add(
+        &theme_button,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::Right,
+        GAP,
+    );
     head.add(&about_button, 0, SizerFlag::AlignCenterVertical, 0);
     root.add_sizer(&head, 0, SizerFlag::Expand | SizerFlag::All, PAD);
 
     // primary action: the source file
-    let source_label = StaticText::builder(&panel).with_label("Source file").build();
+    let source_label = StaticText::builder(&panel)
+        .with_label("Source file")
+        .build();
     if let Some(mut font) = source_label.get_font() {
         font.make_bold();
         source_label.set_font(&font);
@@ -132,48 +160,117 @@ pub fn build(theme: Theme) {
     let source_clear = TrashButton::new(&panel, "Clear source file");
     square(source_clear.widget(), side);
     let source_row = BoxSizer::builder(Orientation::Horizontal).build();
-    source_row.add(&source.panel, 1, SizerFlag::Expand | SizerFlag::AlignCenterVertical, 0);
-    source_row.add(&source_browse, 0, SizerFlag::AlignCenterVertical | SizerFlag::Left, GAP);
-    source_row.add(source_clear.widget(), 0, SizerFlag::AlignCenterVertical | SizerFlag::Left, GAP);
-    root.add(&source_label, 0, SizerFlag::Left | SizerFlag::Right | SizerFlag::Top, PAD);
+    source_row.add(
+        &source.panel,
+        1,
+        SizerFlag::Expand | SizerFlag::AlignCenterVertical,
+        0,
+    );
+    source_row.add(
+        &source_browse,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::Left,
+        GAP,
+    );
+    source_row.add(
+        source_clear.widget(),
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::Left,
+        GAP,
+    );
+    root.add(
+        &source_label,
+        0,
+        SizerFlag::Left | SizerFlag::Right | SizerFlag::Top,
+        PAD,
+    );
     root.add_spacer(6);
-    root.add_sizer(&source_row, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right, PAD);
+    root.add_sizer(
+        &source_row,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right,
+        PAD,
+    );
     // full path under the field
     let source_caption = StaticText::builder(&panel).with_label(" ").build();
     root.add_spacer(4);
-    root.add_sizer(&indented(&source_caption), 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right, PAD);
+    root.add_sizer(
+        &indented(&source_caption),
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right,
+        PAD,
+    );
     root.add_spacer(PAD);
 
     // scan mode
     let mode = BoxSizer::builder(Orientation::Horizontal).build();
     let mode_label = StaticText::builder(&panel).with_label("Scan mode:").build();
-    let radio_index = RadioButton::builder(&panel).with_label("Indexed (fast)").first_in_group().build();
-    let radio_fly = RadioButton::builder(&panel).with_label("On-the-fly (scan HVSC)").build();
-    mode.add(&mode_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::Right, 16);
-    mode.add(&radio_index, 0, SizerFlag::AlignCenterVertical | SizerFlag::Right, 16);
+    let radio_index = RadioButton::builder(&panel)
+        .with_label("Indexed (fast)")
+        .first_in_group()
+        .build();
+    let radio_fly = RadioButton::builder(&panel)
+        .with_label("On-the-fly (scan HVSC)")
+        .build();
+    mode.add(
+        &mode_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::Right,
+        16,
+    );
+    mode.add(
+        &radio_index,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::Right,
+        16,
+    );
     mode.add(&radio_fly, 0, SizerFlag::AlignCenterVertical, 0);
     root.add_sizer(&mode, 0, SizerFlag::Expand | SizerFlag::All, PAD);
 
     // actions: what a scan will use (or what is missing) on the left, Scan on the right
     let actions = BoxSizer::builder(Orientation::Horizontal).build();
     // the info icon marks a hint (something is missing); it is hidden while the line is plain information
-    let info_icon = BitmapBundle::from_svg_text(INFO_SVG, Size::new(16, 16)).and_then(|b| b.get_bitmap_for(&panel));
+    let info_icon = BitmapBundle::from_svg_text(INFO_SVG, Size::new(16, 16))
+        .and_then(|b| b.get_bitmap_for(&panel));
     let info = StaticBitmap::builder(&panel).with_bitmap(info_icon).build();
     let status = StaticText::builder(&panel).with_label(" ").build();
     // the main action: the default button, which the system draws emphasised, and a bit larger
-    let scan = Button::builder(&panel).with_label(FIND).with_size(Size::new(110, -1)).build();
+    let scan = Button::builder(&panel)
+        .with_label(FIND)
+        .with_size(Size::new(110, -1))
+        .build();
     widgets::grow(&scan);
     scan.set_default();
-    actions.add(&info, 0, SizerFlag::AlignCenterVertical | SizerFlag::Right, 6);
-    actions.add(&status, 1, SizerFlag::AlignCenterVertical | SizerFlag::Right, PAD);
+    actions.add(
+        &info,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::Right,
+        6,
+    );
+    actions.add(
+        &status,
+        1,
+        SizerFlag::AlignCenterVertical | SizerFlag::Right,
+        PAD,
+    );
     actions.add(&scan, 0, SizerFlag::AlignCenterVertical, 0);
     root.add_sizer(&actions, 0, SizerFlag::Expand | SizerFlag::All, PAD);
 
     // progress and results stay hidden (no empty space) until first needed
     let gauge = widgets::Bar::new(&panel, Size::new(-1, 18));
-    root.add(&gauge.panel, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom, PAD);
+    root.add(
+        &gauge.panel,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom,
+        PAD,
+    );
     let results = ResultsView::new(&panel);
-    root.add(&results.panel, 1, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom, PAD);
+    root.add(
+        &results.panel,
+        1,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom,
+        PAD,
+    );
     gauge.show(false);
     results.panel.show(false);
 
@@ -253,7 +350,8 @@ pub fn logo_bitmap(panel: &Panel, ink: &str) -> Option<Bitmap> {
     // the artwork has no fill of its own (black); give its path one
     let svg = LOGO_SVG.replacen("<path", &format!("<path fill=\"{ink}\""), 1);
     let height = (LOGO_WIDTH as f32 * LOGO_VIEW.1 / LOGO_VIEW.0).round() as i32;
-    BitmapBundle::from_svg_text(&svg, Size::new(LOGO_WIDTH, height)).and_then(|b| b.get_bitmap_for(panel))
+    BitmapBundle::from_svg_text(&svg, Size::new(LOGO_WIDTH, height))
+        .and_then(|b| b.get_bitmap_for(panel))
 }
 
 impl Ui {
@@ -280,7 +378,11 @@ impl Ui {
                 .with_wildcard("C64 programs|*.prg;*.PRG;*.vsf;*.VSF")
                 .build();
             if dialog.show_modal() == ID_OK {
-                if let Some(path) = dialog.get_path().map(PathBuf::from).filter(|p| is_source_file(p)) {
+                if let Some(path) = dialog
+                    .get_path()
+                    .map(PathBuf::from)
+                    .filter(|p| is_source_file(p))
+                {
                     ui.state.borrow_mut().source = Some(path);
                     ui.sync();
                 }
@@ -298,13 +400,17 @@ impl Ui {
             event.skip(true);
         });
         let ui = self.clone();
-        self.settings_button.on_mouse_left_up(move |_| ui.open_settings());
+        self.settings_button
+            .on_mouse_left_up(move |_| ui.open_settings());
         let ui = self.clone();
-        self.theme_button.on_mouse_left_up(move |_| ui.show_theme_menu());
+        self.theme_button
+            .on_mouse_left_up(move |_| ui.show_theme_menu());
         let ui = self.clone();
-        self.about_button.on_mouse_left_up(move |_| crate::about_window::show(&ui.frame));
+        self.about_button
+            .on_mouse_left_up(move |_| crate::about_window::show(&ui.frame));
         let ui = self.clone();
-        self.frame.on_menu_selected(move |event| ui.on_menu(event.get_id()));
+        self.frame
+            .on_menu_selected(move |event| ui.on_menu(event.get_id()));
 
         let ui = self.clone();
         self.scan.on_click(move |_| ui.on_scan());
@@ -326,10 +432,13 @@ impl Ui {
             let accent = SystemSettings::get_colour(SystemColour::Highlight);
             let normal = self.state.borrow().field_colour;
             self.source.set_background_color(mix(normal, accent, 0.35));
-            self.source_caption.set_foreground_color(readable(accent, normal));
-            self.source_caption.set_label("Drop to use this file as the source");
+            self.source_caption
+                .set_foreground_color(readable(accent, normal));
+            self.source_caption
+                .set_label("Drop to use this file as the source");
         } else {
-            self.source.set_background_color(self.state.borrow().field_colour);
+            self.source
+                .set_background_color(self.state.borrow().field_colour);
             self.refresh_caption();
         }
         self.source.refresh();
@@ -339,7 +448,11 @@ impl Ui {
     /// runs are refused.
     fn on_drop(&self, files: &[String]) -> bool {
         self.drop_hover(false);
-        let Some(file) = files.iter().map(PathBuf::from).find(|p| p.is_file() && is_source_file(p)) else {
+        let Some(file) = files
+            .iter()
+            .map(PathBuf::from)
+            .find(|p| p.is_file() && is_source_file(p))
+        else {
             return false;
         };
         if !self.idle() {
@@ -370,7 +483,11 @@ impl Ui {
     fn sync(&self) {
         let (source, prefs, running) = {
             let st = self.state.borrow();
-            (st.source.clone(), st.prefs.borrow().clone(), st.job.is_some())
+            (
+                st.source.clone(),
+                st.prefs.borrow().clone(),
+                st.job.is_some(),
+            )
         };
         let idle = !running;
         let have_source = source.is_some();
@@ -378,16 +495,30 @@ impl Ui {
         if self.source.get_value() != shown {
             self.source.set_value(&shown);
         }
-        self.source.set_tooltip(&source.as_ref().map(|p| p.display().to_string()).unwrap_or_default());
+        self.source.set_tooltip(
+            &source
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default(),
+        );
         // what a scan reads: the index in indexed mode, else the HVSC folder
-        let tunes = if prefs.on_the_fly { prefs.hvsc.as_ref() } else { prefs.index.as_ref() };
+        let tunes = if prefs.on_the_fly {
+            prefs.hvsc.as_ref()
+        } else {
+            prefs.index.as_ref()
+        };
         // the HVSC folder is required in both modes; indexed mode also needs the index
         let missing_setting = prefs.missing();
         let have_tunes = missing_setting.is_none();
 
         self.source_clear.enable(idle && have_source);
-        for control in [&self.source.panel as &dyn WxWidget, &self.source_browse, &self.radio_index, &self.radio_fly, &self.settings_button]
-        {
+        for control in [
+            &self.source.panel as &dyn WxWidget,
+            &self.source_browse,
+            &self.radio_index,
+            &self.radio_fly,
+            &self.settings_button,
+        ] {
             control.enable(idle);
         }
         self.scan.set_label(if running { "Cancel" } else { FIND });
@@ -396,22 +527,41 @@ impl Ui {
         // what is missing in normal text, what a scan will use in grey
         let (text, missing) = match (running, missing_setting, have_source, prefs.on_the_fly) {
             (true, ..) => (String::new(), false),
-            (_, Some(Missing::Hvsc), ..) => ("Select the HVSC folder in Settings".to_string(), true),
-            (_, Some(Missing::Index), ..) => ("Select or build an index in Settings".to_string(), true),
+            (_, Some(Missing::Hvsc), ..) => {
+                ("Select the HVSC folder in Settings".to_string(), true)
+            }
+            (_, Some(Missing::Index), ..) => {
+                ("Select or build an index in Settings".to_string(), true)
+            }
             (_, None, false, _) => ("Choose or drop a source file".to_string(), true),
-            (_, None, true, true) => (format!("Reading HVSC: {}", file_name(tunes.unwrap())), false),
-            (_, None, true, false) => (format!("Using index: {}", file_name(tunes.unwrap())), false),
+            (_, None, true, true) => (
+                format!("Reading HVSC: {}", file_name(tunes.unwrap())),
+                false,
+            ),
+            (_, None, true, false) => {
+                (format!("Using index: {}", file_name(tunes.unwrap())), false)
+            }
         };
-        let colour = if missing { SystemSettings::get_colour(SystemColour::WindowText) } else { muted(&self.panel) };
+        let colour = if missing {
+            SystemSettings::get_colour(SystemColour::WindowText)
+        } else {
+            muted(&self.panel)
+        };
         self.info.show(missing);
         self.status.set_foreground_color(colour);
-        self.status.set_label(&if text.is_empty() { " ".to_string() } else { text });
-        self.status.set_tooltip(&tunes.map(|p| p.display().to_string()).unwrap_or_default());
+        self.status.set_label(&if text.is_empty() {
+            " ".to_string()
+        } else {
+            text
+        });
+        self.status
+            .set_tooltip(&tunes.map(|p| p.display().to_string()).unwrap_or_default());
         // the field is coloured explicitly: on Windows in dark mode it would stay white
         let field = SystemSettings::get_colour(SystemColour::Window);
         self.state.borrow_mut().field_colour = field;
         self.source.set_background_color(field);
-        self.source.set_foreground_color(SystemSettings::get_colour(SystemColour::WindowText));
+        self.source
+            .set_foreground_color(SystemSettings::get_colour(SystemColour::WindowText));
         self.refresh_caption();
         self.refresh_logo();
         self.panel.layout();
@@ -434,10 +584,24 @@ impl Ui {
     /// this works from the panel width and the controls that have a fixed width.
     fn refresh_caption(&self) {
         let panel = self.panel.get_client_size().width;
-        let field = panel - 2 * PAD - self.source_browse.get_size().width - self.source_clear.widget().get_size().width - 2 * GAP;
-        let text = self.state.borrow().source.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
+        let field = panel
+            - 2 * PAD
+            - self.source_browse.get_size().width
+            - self.source_clear.widget().get_size().width
+            - 2 * GAP;
+        let text = self
+            .state
+            .borrow()
+            .source
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default();
         self.source_caption.set_foreground_color(muted(&self.panel));
-        self.source_caption.set_label(&fit(&self.source_caption, &text, (field - widgets::CAPTION_INSET).max(60)));
+        self.source_caption.set_label(&fit(
+            &self.source_caption,
+            &text,
+            (field - widgets::CAPTION_INSET).max(60),
+        ));
     }
 
     fn show_theme_menu(&self) {
@@ -477,7 +641,9 @@ impl Ui {
         let note = match theme::apply_now(chosen) {
             Applied::Now => None,
             Applied::OnRestart => Some("The theme changes the next time SidFind starts."),
-            Applied::Unsupported => Some("This system does not allow changing the theme from SidFind."),
+            Applied::Unsupported => {
+                Some("This system does not allow changing the theme from SidFind.")
+            }
         };
         if let Some(note) = note {
             let dialog = MessageDialog::builder(&self.frame, note, TITLE)
@@ -499,8 +665,17 @@ impl Ui {
             if prefs.missing().is_some() {
                 return; // the button is disabled then; this keeps the rule in one place too
             }
-            let source = if prefs.on_the_fly { prefs.hvsc.clone().map(Source::Hvsc) } else { prefs.index.clone().map(Source::Index) };
-            (st.source.clone(), source, st.settings.clone(), prefs.on_the_fly)
+            let source = if prefs.on_the_fly {
+                prefs.hvsc.clone().map(Source::Hvsc)
+            } else {
+                prefs.index.clone().map(Source::Index)
+            };
+            (
+                st.source.clone(),
+                source,
+                st.settings.clone(),
+                prefs.on_the_fly,
+            )
         };
         let (Some(file), Some(source)) = (file, source) else {
             return;
@@ -571,7 +746,8 @@ impl Ui {
         // off the bottom edge. The laid-out bottom edge of that row tells how much is missing.
         self.panel.layout();
         let bottom = |w: &dyn WxWidget| w.get_position().y + w.get_size().height;
-        let missing = bottom(&self.scan).max(bottom(&self.status)) + PAD - self.panel.get_client_size().height;
+        let missing = bottom(&self.scan).max(bottom(&self.status)) + PAD
+            - self.panel.get_client_size().height;
         let height = self.frame.get_size().height + missing.max(0);
         self.frame.set_size(Size::new(width, height));
     }
@@ -580,7 +756,11 @@ impl Ui {
 /// `accent` as text colour on `background`: on a dark background the accent (a fairly deep
 /// blue) is lightened toward white so it stays readable; on a light one it is used as it is.
 fn readable(accent: Colour, background: Colour) -> Colour {
-    if luma(background) < 128.0 { mix(accent, Colour::rgb(255, 255, 255), 0.55) } else { accent }
+    if luma(background) < 128.0 {
+        mix(accent, Colour::rgb(255, 255, 255), 0.55)
+    } else {
+        accent
+    }
 }
 
 /// Makes `window` accept dropped files for `ui`.
@@ -597,7 +777,13 @@ fn attach_drop<W: WxWidget>(ui: &Ui, window: &W) {
     };
     FileDropTarget::builder(window)
         .with_on_enter(move |_, _, default| hover(&enter, default))
-        .with_on_drag_over(move |_, _, default| if over.idle() { default } else { DragResult::None })
+        .with_on_drag_over(move |_, _, default| {
+            if over.idle() {
+                default
+            } else {
+                DragResult::None
+            }
+        })
         .with_on_leave(move || leave.drop_hover(false))
         .with_on_drop_files(move |dropped, _, _| files.on_drop(&dropped))
         .build();
@@ -610,16 +796,25 @@ mod tests {
     #[test]
     fn mix_blends_between_two_colours() {
         let (black, white) = (Colour::rgb(0, 0, 0), Colour::rgb(255, 255, 255));
-        assert_eq!((mix(black, white, 0.0).r, mix(black, white, 1.0).r), (0, 255));
+        assert_eq!(
+            (mix(black, white, 0.0).r, mix(black, white, 1.0).r),
+            (0, 255)
+        );
         assert_eq!(mix(black, white, 0.5).g, 128);
-        assert_eq!(mix(Colour::rgb(10, 20, 30), Colour::rgb(10, 20, 30), 0.7).b, 30);
+        assert_eq!(
+            mix(Colour::rgb(10, 20, 30), Colour::rgb(10, 20, 30), 0.7).b,
+            30
+        );
     }
 
     #[test]
     fn accent_text_is_lightened_on_dark_backgrounds_only() {
         let accent = Colour::rgb(0, 90, 220);
         let (dark, light) = (Colour::rgb(30, 30, 30), Colour::rgb(250, 250, 250));
-        assert!(luma(readable(accent, dark)) > luma(accent) + 40.0, "must get clearly brighter on dark");
+        assert!(
+            luma(readable(accent, dark)) > luma(accent) + 40.0,
+            "must get clearly brighter on dark"
+        );
         assert_eq!(readable(accent, light).b, accent.b, "unchanged on light");
     }
 }
@@ -631,8 +826,14 @@ mod logo_tests {
     #[test]
     fn the_logo_constants_match_the_artwork() {
         let (w, h) = LOGO_VIEW;
-        assert!(LOGO_SVG.contains(&format!("viewBox=\"0 0 {w} {h}\"")), "LOGO_VIEW is out of date");
+        assert!(
+            LOGO_SVG.contains(&format!("viewBox=\"0 0 {w} {h}\"")),
+            "LOGO_VIEW is out of date"
+        );
         assert!(!LOGO_SVG.contains("<text"), "the logo must be shapes only");
-        assert!(LOGO_SVG.contains("<path"), "refresh_logo fills the first <path>");
+        assert!(
+            LOGO_SVG.contains("<path"),
+            "refresh_logo fills the first <path>"
+        );
     }
 }

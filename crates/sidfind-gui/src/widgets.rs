@@ -40,7 +40,11 @@ pub fn mix(a: Colour, b: Colour, t: f32) -> Colour {
 pub fn muted(window: &dyn WxWidget) -> Colour {
     let background = window.get_background_color();
     let text = SystemSettings::get_colour(SystemColour::WindowText);
-    if luma(background) < 128.0 { mix(text, background, 0.3) } else { mix(text, background, 0.5) }
+    if luma(background) < 128.0 {
+        mix(text, background, 0.3)
+    } else {
+        mix(text, background, 0.5)
+    }
 }
 
 /// Info icon ("i" in an outlined circle), same grey.
@@ -59,7 +63,9 @@ fn trash_svg(colour: &str, opacity: f32) -> String {
 /// On hover the icon takes the window text colour and the cursor becomes a hand, so it reads as
 /// clickable. The SVG must draw in `ICON_GREY`, which is what gets swapped on hover.
 pub fn icon_button(panel: &Panel, svg: &'static str, size: i32, tip: &str) -> StaticBitmap {
-    let icon = StaticBitmap::builder(panel).with_bitmap(icon_bitmap(panel, svg, size)).build();
+    let icon = StaticBitmap::builder(panel)
+        .with_bitmap(icon_bitmap(panel, svg, size))
+        .build();
     icon.set_tooltip(tip);
     if let Some(hand) = Cursor::from_stock(StockCursor::Hand) {
         icon.set_cursor(Some(&hand));
@@ -67,7 +73,10 @@ pub fn icon_button(panel: &Panel, svg: &'static str, size: i32, tip: &str) -> St
     let on_enter = icon;
     icon.on_mouse_enter(move |_| {
         let ink = SystemSettings::get_colour(SystemColour::WindowText);
-        let hover = svg.replace(ICON_GREY, &format!("#{:02x}{:02x}{:02x}", ink.r, ink.g, ink.b));
+        let hover = svg.replace(
+            ICON_GREY,
+            &format!("#{:02x}{:02x}{:02x}", ink.r, ink.g, ink.b),
+        );
         if let Some(bundle) = BitmapBundle::from_svg_text(&hover, Size::new(size, size)) {
             on_enter.set_bitmap_bundle(&bundle);
         }
@@ -97,13 +106,16 @@ pub struct TrashButton {
 
 /// The trash icon in `colour` (an SVG colour) at `opacity`.
 fn trash_bitmap(window: &dyn WxWidget, colour: &str, opacity: f32) -> Option<Bitmap> {
-    BitmapBundle::from_svg_text(&trash_svg(colour, opacity), Size::new(16, 16)).and_then(|b| b.get_bitmap_for(window))
+    BitmapBundle::from_svg_text(&trash_svg(colour, opacity), Size::new(16, 16))
+        .and_then(|b| b.get_bitmap_for(window))
 }
 
 impl TrashButton {
     /// Starts disabled.
     pub fn new(panel: &Panel, tip: &str) -> Self {
-        let icon = StaticBitmap::builder(panel).with_bitmap(trash_bitmap(panel, ICON_GREY, DISABLED_OPACITY)).build();
+        let icon = StaticBitmap::builder(panel)
+            .with_bitmap(trash_bitmap(panel, ICON_GREY, DISABLED_OPACITY))
+            .build();
         icon.set_tooltip(tip);
         let enabled = Rc::new(Cell::new(false));
         let on_enter = (icon, enabled.clone());
@@ -159,7 +171,9 @@ impl TrashButton {
 /// beside it (Windows sizes a bitmap button to its icon; macOS pads it, which stays as it is).
 /// Whether `path` is a file the scan takes as a source: a PRG or a VICE snapshot (VSF), in any case.
 pub fn is_source_file(path: &Path) -> bool {
-    path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("prg") || e.eq_ignore_ascii_case("vsf"))
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("prg") || e.eq_ignore_ascii_case("vsf"))
 }
 
 /// A read-only field showing one line of text, vertically centred. It is a bordered panel with a
@@ -172,10 +186,17 @@ pub struct TextField {
 
 impl TextField {
     pub fn new(parent: &Panel) -> Self {
-        let panel = Panel::builder(parent).with_style(PanelStyle::BorderNone).build();
+        let panel = Panel::builder(parent)
+            .with_style(PanelStyle::BorderNone)
+            .build();
         let text = StaticText::builder(&panel).with_label(" ").build();
         let row = BoxSizer::builder(Orientation::Horizontal).build();
-        row.add(&text, 1, SizerFlag::AlignCenterVertical | SizerFlag::Left | SizerFlag::Right, GAP);
+        row.add(
+            &text,
+            1,
+            SizerFlag::AlignCenterVertical | SizerFlag::Left | SizerFlag::Right,
+            GAP,
+        );
         panel.set_sizer(row, true);
         TextField { panel, text }
     }
@@ -249,7 +270,11 @@ impl Bar {
         panel.on_paint(move |_| {
             let dc = AutoBufferedPaintDC::new(&painted);
             let size = painted.get_size();
-            let track = mix(SystemSettings::get_colour(SystemColour::WindowText), SystemSettings::get_colour(SystemColour::Window), 0.85);
+            let track = mix(
+                SystemSettings::get_colour(SystemColour::WindowText),
+                SystemSettings::get_colour(SystemColour::Window),
+                0.85,
+            );
             dc.set_pen(track, 1, PenStyle::Solid);
             dc.set_brush(track, BrushStyle::Solid);
             dc.draw_rectangle(0, 0, size.width, size.height);
@@ -286,7 +311,11 @@ pub fn hyperlink(panel: &Panel, text: &str, url: &str) -> StaticText {
     // the accent is pale on a light background (macOS selection blue), so links use a deeper blue there
     // dark mode is told by the system text colour (light text), not by the panel's own background
     let dark = luma(SystemSettings::get_colour(SystemColour::WindowText)) > 128.0;
-    let colour = if dark { SystemSettings::get_colour(SystemColour::Highlight) } else { Colour::rgb(0, 84, 200) };
+    let colour = if dark {
+        SystemSettings::get_colour(SystemColour::Highlight)
+    } else {
+        Colour::rgb(0, 84, 200)
+    };
     link.set_foreground_color(colour);
     if let Some(mut font) = link.get_font() {
         font.set_underlined(true);
@@ -298,7 +327,9 @@ pub fn hyperlink(panel: &Panel, text: &str, url: &str) -> StaticText {
     link.set_tooltip(url);
     // hover: the text colour, as the icon buttons do
     let on_enter = link;
-    link.on_mouse_enter(move |_| on_enter.set_foreground_color(SystemSettings::get_colour(SystemColour::WindowText)));
+    link.on_mouse_enter(move |_| {
+        on_enter.set_foreground_color(SystemSettings::get_colour(SystemColour::WindowText))
+    });
     let on_leave = link;
     link.on_mouse_leave(move |_| on_leave.set_foreground_color(colour));
     let url = url.to_string();
@@ -332,7 +363,13 @@ impl PathSetting {
     /// `description` is shown in grey, and `link` (text, URL) as a link that opens in the
     /// default browser. The link sits at the right end of the label's line, the description
     /// on its own line below it; the button follows.
-    pub fn new(panel: &Panel, label: &str, description: &str, link: Option<(&str, &str)>, clear_tip: &str) -> (PathSetting, BoxSizer) {
+    pub fn new(
+        panel: &Panel,
+        label: &str,
+        description: &str,
+        link: Option<(&str, &str)>,
+        clear_tip: &str,
+    ) -> (PathSetting, BoxSizer) {
         let label = StaticText::builder(panel).with_label(label).build();
         make_bold(&label);
         let button = Button::builder(panel).with_label("Select...").build();
@@ -341,8 +378,18 @@ impl PathSetting {
         square(clear.widget(), tall(&button));
         let caption = StaticText::builder(panel).with_label(" ").build();
         let row = BoxSizer::builder(Orientation::Horizontal).build();
-        row.add(&button, 1, SizerFlag::Expand | SizerFlag::AlignCenterVertical, 0);
-        row.add(clear.widget(), 0, SizerFlag::AlignCenterVertical | SizerFlag::Left, GAP);
+        row.add(
+            &button,
+            1,
+            SizerFlag::Expand | SizerFlag::AlignCenterVertical,
+            0,
+        );
+        row.add(
+            clear.widget(),
+            0,
+            SizerFlag::AlignCenterVertical | SizerFlag::Left,
+            GAP,
+        );
         let cell = BoxSizer::builder(Orientation::Vertical).build();
         // the label, with the link (if any) at the right end of the same line
         let header = BoxSizer::builder(Orientation::Horizontal).build();
@@ -353,22 +400,44 @@ impl PathSetting {
             header.add(&link, 0, SizerFlag::AlignCenterVertical, 0);
         }
         let below_header = if description.is_empty() { 6 } else { 2 };
-        cell.add_sizer(&header, 0, SizerFlag::Expand | SizerFlag::Bottom, below_header);
+        cell.add_sizer(
+            &header,
+            0,
+            SizerFlag::Expand | SizerFlag::Bottom,
+            below_header,
+        );
         if !description.is_empty() {
             let note = StaticText::builder(panel).with_label(description).build();
             note.set_foreground_color(muted(panel));
             cell.add(&note, 0, SizerFlag::Bottom, 6);
         }
         cell.add_sizer(&row, 0, SizerFlag::Expand, 0);
-        cell.add_sizer(&indented(&caption), 0, SizerFlag::Expand | SizerFlag::Top, 4);
-        (PathSetting { button, clear, caption }, cell)
+        cell.add_sizer(
+            &indented(&caption),
+            0,
+            SizerFlag::Expand | SizerFlag::Top,
+            4,
+        );
+        (
+            PathSetting {
+                button,
+                clear,
+                caption,
+            },
+            cell,
+        )
     }
 
     /// Select... or Change... with the path as tooltip; the trash icon only when there is
     /// something to clear and `enabled`.
     pub fn show(&self, path: Option<&Path>, enabled: bool) {
-        self.button.set_label(if path.is_some() { "Change..." } else { "Select..." });
-        self.button.set_tooltip(&path.map(|p| p.display().to_string()).unwrap_or_default());
+        self.button.set_label(if path.is_some() {
+            "Change..."
+        } else {
+            "Select..."
+        });
+        self.button
+            .set_tooltip(&path.map(|p| p.display().to_string()).unwrap_or_default());
         self.clear.enable(path.is_some() && enabled);
     }
 
@@ -378,7 +447,8 @@ impl PathSetting {
         let button = row_width - self.clear.widget().get_size().width - GAP;
         self.caption.set_foreground_color(muted(&self.caption));
         let text = path.map(|p| p.display().to_string()).unwrap_or_default();
-        self.caption.set_label(&fit(&self.caption, &text, (button - CAPTION_INSET).max(60)));
+        self.caption
+            .set_label(&fit(&self.caption, &text, (button - CAPTION_INSET).max(60)));
     }
 }
 
@@ -392,7 +462,10 @@ pub fn indented(caption: &StaticText) -> BoxSizer {
 
 /// The last component of a path, or the whole path if it has none.
 pub fn file_name(path: &Path) -> String {
-    path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned())
+    path.file_name().map_or_else(
+        || path.display().to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    )
 }
 
 /// `text` cut in the middle so it is at most `max_px` wide in the font of `widget`; the
@@ -409,7 +482,11 @@ pub fn fit(widget: &StaticText, text: &str, max_px: i32) -> String {
     let (mut lo, mut hi) = (1, text.chars().count());
     while lo < hi {
         let mid = (lo + hi + 1) / 2;
-        if width(&shorten(text, mid)) <= max_px { lo = mid } else { hi = mid - 1 }
+        if width(&shorten(text, mid)) <= max_px {
+            lo = mid
+        } else {
+            hi = mid - 1
+        }
     }
     shorten(text, lo)
 }
@@ -422,7 +499,11 @@ pub fn shorten(path: &str, max: usize) -> String {
     }
     let keep = max.saturating_sub(3);
     let (head, tail) = (keep / 3, keep - keep / 3);
-    format!("{}...{}", c[..head].iter().collect::<String>(), c[c.len() - tail..].iter().collect::<String>())
+    format!(
+        "{}...{}",
+        c[..head].iter().collect::<String>(),
+        c[c.len() - tail..].iter().collect::<String>()
+    )
 }
 
 #[cfg(test)]
@@ -436,7 +517,11 @@ mod tests {
         let cut = shorten(long, 20);
         assert_eq!(cut.chars().count(), 20);
         assert_eq!(cut, "/User...VSC/C64Music"); // 20 characters: 5 kept at the start, 12 at the end
-        assert_eq!(shorten("ääääääääää", 6).chars().count(), 6, "must not split a multi-byte character");
+        assert_eq!(
+            shorten("ääääääääää", 6).chars().count(),
+            6,
+            "must not split a multi-byte character"
+        );
     }
 
     #[test]

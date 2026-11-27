@@ -62,19 +62,34 @@ impl Prefs {
     pub fn load() -> Prefs {
         let env = |name| std::env::var_os(name).map(PathBuf::from);
         let config = Config::get(true);
-        let saved = |key: &str| config.as_ref().filter(|c| c.has_entry(key)).map(|c| c.read_string(key, ""));
+        let saved = |key: &str| {
+            config
+                .as_ref()
+                .filter(|c| c.has_entry(key))
+                .map(|c| c.read_string(key, ""))
+        };
         let hvsc = resolve(saved(HVSC), env("SIDFIND_HVSC"));
         let index = resolve(saved(INDEX), env("SIDFIND_INDEX"));
         let on_the_fly = match config.as_ref().filter(|c| c.has_entry(MODE)) {
             Some(c) => c.read_long(MODE, 0) != 0,
             None => default_mode(&hvsc, &index),
         };
-        Prefs { hvsc, index, on_the_fly }
+        Prefs {
+            hvsc,
+            index,
+            on_the_fly,
+        }
     }
 
     pub fn save(&self) {
-        let Some(config) = Config::get(true) else { return };
-        let text = |p: &Option<PathBuf>| p.as_ref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+        let Some(config) = Config::get(true) else {
+            return;
+        };
+        let text = |p: &Option<PathBuf>| {
+            p.as_ref()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        };
         config.write_string(HVSC, &text(&self.hvsc));
         config.write_string(INDEX, &text(&self.index));
         config.write_long(MODE, i64::from(self.on_the_fly));
@@ -116,19 +131,71 @@ mod tests {
     #[test]
     fn setup_is_needed_until_the_hvsc_folder_is_set() {
         assert!(Prefs::default().needs_setup());
-        assert!(Prefs { index: p("/i"), ..Prefs::default() }.needs_setup(), "an index alone is not enough");
-        assert!(!Prefs { hvsc: p("/h"), ..Prefs::default() }.needs_setup());
+        assert!(
+            Prefs {
+                index: p("/i"),
+                ..Prefs::default()
+            }
+            .needs_setup(),
+            "an index alone is not enough"
+        );
+        assert!(
+            !Prefs {
+                hvsc: p("/h"),
+                ..Prefs::default()
+            }
+            .needs_setup()
+        );
     }
 
     #[test]
     fn a_scan_always_needs_the_hvsc_folder_and_in_indexed_mode_the_index_too() {
         let (hvsc, index) = (p("/h"), p("/i"));
         // indexed mode (on_the_fly = false)
-        assert_eq!(Prefs { index: index.clone(), ..Prefs::default() }.missing(), Some(Missing::Hvsc), "index without HVSC");
-        assert_eq!(Prefs { hvsc: hvsc.clone(), ..Prefs::default() }.missing(), Some(Missing::Index));
-        assert_eq!(Prefs { hvsc: hvsc.clone(), index: index.clone(), on_the_fly: false }.missing(), None);
+        assert_eq!(
+            Prefs {
+                index: index.clone(),
+                ..Prefs::default()
+            }
+            .missing(),
+            Some(Missing::Hvsc),
+            "index without HVSC"
+        );
+        assert_eq!(
+            Prefs {
+                hvsc: hvsc.clone(),
+                ..Prefs::default()
+            }
+            .missing(),
+            Some(Missing::Index)
+        );
+        assert_eq!(
+            Prefs {
+                hvsc: hvsc.clone(),
+                index: index.clone(),
+                on_the_fly: false
+            }
+            .missing(),
+            None
+        );
         // on-the-fly mode needs no index
-        assert_eq!(Prefs { hvsc: hvsc.clone(), index: None, on_the_fly: true }.missing(), None);
-        assert_eq!(Prefs { hvsc: None, index, on_the_fly: true }.missing(), Some(Missing::Hvsc));
+        assert_eq!(
+            Prefs {
+                hvsc: hvsc.clone(),
+                index: None,
+                on_the_fly: true
+            }
+            .missing(),
+            None
+        );
+        assert_eq!(
+            Prefs {
+                hvsc: None,
+                index,
+                on_the_fly: true
+            }
+            .missing(),
+            Some(Missing::Hvsc)
+        );
     }
 }

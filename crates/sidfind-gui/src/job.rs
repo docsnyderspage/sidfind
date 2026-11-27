@@ -8,12 +8,15 @@ use std::thread;
 
 use sidfind_core::scan::Params;
 use sidfind_core::{
-    build_index, identify, Control, Identification, IndexSummary, ScanSettings, Source, DEFAULT_INDEX_SAMPLING,
-    DEFAULT_WINDOW,
+    Control, DEFAULT_INDEX_SAMPLING, DEFAULT_WINDOW, Identification, IndexSummary, ScanSettings,
+    Source, build_index, identify,
 };
 
 pub enum Outcome {
-    Built { path: PathBuf, summary: IndexSummary },
+    Built {
+        path: PathBuf,
+        summary: IndexSummary,
+    },
     Scanned(Vec<Identification>),
 }
 
@@ -34,14 +37,23 @@ impl Job {
             total: Arc::new(AtomicUsize::new(0)),
             result: Arc::new(Mutex::new(None)),
         };
-        let (cancel, done, total, result) = (job.cancel.clone(), job.done.clone(), job.total.clone(), job.result.clone());
+        let (cancel, done, total, result) = (
+            job.cancel.clone(),
+            job.done.clone(),
+            job.total.clone(),
+            job.result.clone(),
+        );
         thread::spawn(move || {
             // called from several worker threads, in any order: keep the highest count
             let progress = |d: usize, t: usize| {
                 done.fetch_max(d, Ordering::Relaxed);
                 total.store(t, Ordering::Relaxed);
             };
-            let ctl = Control { progress: Some(&progress), cancel: Some(&cancel), notice: None };
+            let ctl = Control {
+                progress: Some(&progress),
+                cancel: Some(&cancel),
+                notice: None,
+            };
             let outcome = work(&ctl);
             *result.lock().unwrap() = Some(outcome);
         });
@@ -51,7 +63,10 @@ impl Job {
     /// Builds an index of `hvsc` into `out`.
     pub fn build(hvsc: PathBuf, out: PathBuf) -> Job {
         Job::spawn(move |ctl| {
-            let params = Params { window: DEFAULT_WINDOW, sampling: DEFAULT_INDEX_SAMPLING };
+            let params = Params {
+                window: DEFAULT_WINDOW,
+                sampling: DEFAULT_INDEX_SAMPLING,
+            };
             let summary = build_index(&hvsc, &out, params, ctl)?;
             Ok(Outcome::Built { path: out, summary })
         })
@@ -69,7 +84,11 @@ impl Job {
     /// Progress in percent; 0 while the total is not known yet.
     pub fn percent(&self) -> i32 {
         let total = self.total.load(Ordering::Relaxed);
-        if total == 0 { 0 } else { (self.done.load(Ordering::Relaxed) * 100 / total).min(100) as i32 }
+        if total == 0 {
+            0
+        } else {
+            (self.done.load(Ordering::Relaxed) * 100 / total).min(100) as i32
+        }
     }
 
     /// The result, once the worker has finished (returned at most once).
@@ -95,7 +114,8 @@ mod tests {
 
     /// A tiny HVSC with two tunes and a PRG holding the second, in a fresh temp folder.
     fn fixture(tag: &str) -> (PathBuf, PathBuf) {
-        let dir = std::env::temp_dir().join(format!("sidfind-gui-test-{}-{tag}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("sidfind-gui-test-{}-{tag}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("A")).unwrap();
         for (name, seed) in [("one", 1u32), ("two", 2)] {
@@ -119,7 +139,10 @@ mod tests {
             if let Some(result) = job.take_result() {
                 return result;
             }
-            assert!(start.elapsed() < Duration::from_secs(20), "job did not finish");
+            assert!(
+                start.elapsed() < Duration::from_secs(20),
+                "job did not finish"
+            );
             thread::sleep(Duration::from_millis(10));
         }
     }
@@ -130,15 +153,23 @@ mod tests {
         let index = dir.join("hvsc.idx");
 
         let job = Job::build(dir.clone(), index.clone());
-        let Ok(Outcome::Built { path, summary }) = wait(&job) else { panic!("build failed") };
+        let Ok(Outcome::Built { path, summary }) = wait(&job) else {
+            panic!("build failed")
+        };
         assert_eq!(path, index);
         assert_eq!(summary.tunes, 2);
         assert_eq!(job.percent(), 100);
         assert!(job.take_result().is_none(), "the result is handed out once");
 
-        let settings = ScanSettings { cycles: 0, min_score: 1.0, ..ScanSettings::default() };
+        let settings = ScanSettings {
+            cycles: 0,
+            min_score: 1.0,
+            ..ScanSettings::default()
+        };
         let job = Job::scan(prg, Source::Index(index), settings);
-        let Ok(Outcome::Scanned(found)) = wait(&job) else { panic!("scan failed") };
+        let Ok(Outcome::Scanned(found)) = wait(&job) else {
+            panic!("scan failed")
+        };
         assert_eq!(found[0].matches[0].name, "A/two.sid");
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -162,8 +193,15 @@ mod tests {
 
     #[test]
     fn errors_come_back_as_text() {
-        let job = Job::scan(PathBuf::from("/nonexistent.prg"), Source::Hvsc(PathBuf::from("/nonexistent")), ScanSettings::default());
+        let job = Job::scan(
+            PathBuf::from("/nonexistent.prg"),
+            Source::Hvsc(PathBuf::from("/nonexistent")),
+            ScanSettings::default(),
+        );
         assert!(wait(&job).err().unwrap().starts_with("cannot read"));
-        assert_eq!(Job::build(PathBuf::from("/nonexistent"), PathBuf::from("/tmp/x.idx")).percent(), 0);
+        assert_eq!(
+            Job::build(PathBuf::from("/nonexistent"), PathBuf::from("/tmp/x.idx")).percent(),
+            0
+        );
     }
 }

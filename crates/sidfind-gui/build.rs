@@ -10,7 +10,13 @@ use std::process::Command;
 /// The short commit hash of HEAD, with `-dirty` when tracked files have uncommitted changes.
 /// `unknown` when git is not available (e.g. a source archive).
 fn git_hash() -> String {
-    let run = |args: &[&str]| Command::new("git").args(args).output().ok().filter(|o| o.status.success());
+    let run = |args: &[&str]| {
+        Command::new("git")
+            .args(args)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+    };
     let Some(hash) = run(&["rev-parse", "--short", "HEAD"]) else {
         return "unknown".to_string();
     };
@@ -27,7 +33,10 @@ fn main() {
     println!("cargo:rustc-env=SIDFIND_GIT_HASH={}", git_hash());
     println!("cargo:rerun-if-changed=../../assets/icons/sidfind.ico");
     // the target, not the host: this also holds when cross-compiling
-    if !std::env::var("TARGET").unwrap_or_default().contains("windows") {
+    if !std::env::var("TARGET")
+        .unwrap_or_default()
+        .contains("windows")
+    {
         return;
     }
     let manifest = new_manifest("SidFind.Gui")

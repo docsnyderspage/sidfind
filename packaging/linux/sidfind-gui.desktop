@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=SidFind
+Comment=Find the HVSC tune of a C64 SID file
+Exec=sidfind-gui
+Icon=sidfind
+Terminal=false
+Categories=Audio;AudioVideo;

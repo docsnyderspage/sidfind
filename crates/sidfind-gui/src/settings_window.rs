@@ -39,11 +39,18 @@ struct Win {
 /// Shows the settings window and returns when it is closed. A build still running at that
 /// point is cancelled.
 pub fn show(parent: &Frame, prefs: &Rc<RefCell<Prefs>>) {
-    let dialog = Dialog::builder(parent, "Settings").with_size(WIDTH, 300).build();
+    let dialog = Dialog::builder(parent, "Settings")
+        .with_size(WIDTH, 300)
+        .build();
     let panel = Panel::builder(&dialog).build();
     let root = BoxSizer::builder(Orientation::Vertical).build();
 
-    root.add(&headline(&panel, "Settings"), 0, SizerFlag::Left | SizerFlag::Right | SizerFlag::Top, PAD);
+    root.add(
+        &headline(&panel, "Settings"),
+        0,
+        SizerFlag::Left | SizerFlag::Right | SizerFlag::Top,
+        PAD,
+    );
     root.add_spacer(SECTION_GAP);
     let (hvsc, hvsc_cell) = PathSetting::new(
         &panel,
@@ -52,11 +59,26 @@ pub fn show(parent: &Frame, prefs: &Rc<RefCell<Prefs>>) {
         Some(("Download the HVSC collection", HVSC_DOWNLOAD_URL)),
         "Clear HVSC folder",
     );
-    let (index, index_cell) =
-        PathSetting::new(&panel, "Index file", "Allows for faster searches. Build it once from the HVSC folder.", None, "Clear index file");
-    root.add_sizer(&hvsc_cell, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top, PAD);
+    let (index, index_cell) = PathSetting::new(
+        &panel,
+        "Index file",
+        "Allows for faster searches. Build it once from the HVSC folder.",
+        None,
+        "Clear index file",
+    );
+    root.add_sizer(
+        &hvsc_cell,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top,
+        PAD,
+    );
     root.add_spacer(SECTION_GAP);
-    root.add_sizer(&index_cell, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right, PAD);
+    root.add_sizer(
+        &index_cell,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right,
+        PAD,
+    );
     root.add_spacer(SECTION_GAP);
 
     // building an index: the button, and why it is unavailable when it is
@@ -65,14 +87,29 @@ pub fn show(parent: &Frame, prefs: &Rc<RefCell<Prefs>>) {
     grow(&build);
     let hint = StaticText::builder(&panel).with_label(" ").build();
     build_row.add(&build, 0, SizerFlag::AlignCenterVertical, 0);
-    build_row.add(&hint, 1, SizerFlag::AlignCenterVertical | SizerFlag::Left, PAD);
+    build_row.add(
+        &hint,
+        1,
+        SizerFlag::AlignCenterVertical | SizerFlag::Left,
+        PAD,
+    );
     root.add_sizer(&build_row, 0, SizerFlag::Expand | SizerFlag::All, PAD);
 
     // progress and the outcome stay hidden until a build starts
     let gauge = Bar::new(&panel, Size::new(-1, 18));
     let status = StaticText::builder(&panel).with_label(" ").build();
-    root.add(&gauge.panel, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom, PAD);
-    root.add(&status, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom, PAD);
+    root.add(
+        &gauge.panel,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom,
+        PAD,
+    );
+    root.add(
+        &status,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom,
+        PAD,
+    );
     gauge.show(false);
     status.show(false);
 
@@ -196,9 +233,14 @@ impl Win {
         self.hvsc.button.enable(idle);
         self.index.button.enable(idle);
 
-        self.build.set_label(if idle { "Build index..." } else { "Cancel" });
+        self.build
+            .set_label(if idle { "Build index..." } else { "Cancel" });
         self.build.enable(!idle || hvsc.is_some());
-        self.hint.set_label(if idle && hvsc.is_none() { "Select the HVSC folder first" } else { " " });
+        self.hint.set_label(if idle && hvsc.is_none() {
+            "Select the HVSC folder first"
+        } else {
+            " "
+        });
 
         let width = self.panel.get_client_size().width - 2 * PAD;
         self.hvsc.set_caption(hvsc.as_deref(), width);
@@ -211,7 +253,9 @@ impl Win {
             job.cancel();
             return;
         }
-        let Some(hvsc) = self.prefs.borrow().hvsc.clone() else { return };
+        let Some(hvsc) = self.prefs.borrow().hvsc.clone() else {
+            return;
+        };
         // default: the per-user data folder, so a new HVSC release can't wipe the index
         let dir = StandardPaths::user_data_dir();
         let _ = std::fs::create_dir_all(&dir);
@@ -225,7 +269,9 @@ impl Win {
         if chooser.show_modal() != ID_OK {
             return;
         }
-        let Some(path) = chooser.get_path().map(PathBuf::from) else { return };
+        let Some(path) = chooser.get_path().map(PathBuf::from) else {
+            return;
+        };
 
         self.reveal();
         self.gauge.set_value(0);
@@ -242,7 +288,8 @@ impl Win {
             self.status.show(true);
             self.panel.layout();
             let size = self.dialog.get_size();
-            self.dialog.set_size(Size::new(size.width, size.height + 2 * GAP + 36 + 20));
+            self.dialog
+                .set_size(Size::new(size.width, size.height + 2 * GAP + 36 + 20));
         }
     }
 
@@ -262,7 +309,11 @@ impl Win {
             Ok(Outcome::Built { path, summary }) => {
                 self.prefs.borrow_mut().index = Some(path.clone());
                 self.prefs.borrow().save();
-                format!("Index built: {} tunes, {:.0} MB. It is now the index file.", summary.tunes, summary.bytes as f64 / 1e6)
+                format!(
+                    "Index built: {} tunes, {:.0} MB. It is now the index file.",
+                    summary.tunes,
+                    summary.bytes as f64 / 1e6
+                )
             }
             Ok(Outcome::Scanned(_)) => String::new(), // not started from here
             Err(e) if e == CANCELLED => "Cancelled.".to_string(),

@@ -68,25 +68,58 @@ impl ResultsView {
                 // each row is a panel of its own, so hiding it also removes its spacing
                 let row = Panel::builder(&panel).build();
                 let bar = Bar::new(&row, Size::new(BAR_WIDTH, BAR_HEIGHT));
-                let percent = StaticText::builder(&row).with_label(" ").with_style(StaticTextStyle::AlignRight).build();
+                let percent = StaticText::builder(&row)
+                    .with_label(" ")
+                    .with_style(StaticTextStyle::AlignRight)
+                    .build();
                 percent.set_min_size(Size::new(percent_width, -1));
                 let name = StaticText::builder(&row).with_label(" ").build();
-                let score = StaticText::builder(&row).with_label(" ").with_style(StaticTextStyle::AlignRight).build();
+                let score = StaticText::builder(&row)
+                    .with_label(" ")
+                    .with_style(StaticTextStyle::AlignRight)
+                    .build();
                 score.set_min_size(Size::new(score_width, -1));
 
                 let line = BoxSizer::builder(Orientation::Horizontal).build();
                 line.add(&bar.panel, 0, SizerFlag::AlignCenterVertical, 0);
-                line.add(&percent, 0, SizerFlag::AlignCenterVertical | SizerFlag::Left, GAP);
-                line.add(&name, 1, SizerFlag::AlignCenterVertical | SizerFlag::Left, GAP);
-                line.add(&score, 0, SizerFlag::AlignCenterVertical | SizerFlag::Left, GAP);
+                line.add(
+                    &percent,
+                    0,
+                    SizerFlag::AlignCenterVertical | SizerFlag::Left,
+                    GAP,
+                );
+                line.add(
+                    &name,
+                    1,
+                    SizerFlag::AlignCenterVertical | SizerFlag::Left,
+                    GAP,
+                );
+                line.add(
+                    &score,
+                    0,
+                    SizerFlag::AlignCenterVertical | SizerFlag::Left,
+                    GAP,
+                );
                 row.set_sizer(line, true);
                 row.show(false);
                 root.add(&row, 0, SizerFlag::Expand | SizerFlag::Bottom, BETWEEN_ROWS);
-                Row { panel: row, bar, percent, name, score }
+                Row {
+                    panel: row,
+                    bar,
+                    percent,
+                    name,
+                    score,
+                }
             })
             .collect();
         panel.set_sizer(root, true);
-        ResultsView { panel, header, note, rows, content: Rc::new(RefCell::new(Content::default())) }
+        ResultsView {
+            panel,
+            header,
+            note,
+            rows,
+            content: Rc::new(RefCell::new(Content::default())),
+        }
     }
 
     /// Empties the view (a scan is starting).
@@ -115,7 +148,8 @@ impl ResultsView {
         }
         let mut content = self.content.borrow_mut();
         for (row, m) in self.rows.iter().zip(&found.matches) {
-            row.bar.set_value((m.share * 100.0).round().clamp(0.0, 100.0) as i32);
+            row.bar
+                .set_value((m.share * 100.0).round().clamp(0.0, 100.0) as i32);
             row.percent.set_label(&format!("{:.1}%", 100.0 * m.share));
             row.score.set_label(&format!("score {:.1}", m.score));
             row.panel.show(true);
@@ -146,7 +180,11 @@ impl ResultsView {
             self.note.wrap((width - PAD).max(120));
         }
         // what the fixed columns and gaps leave for the tune's path
-        let fixed = BAR_WIDTH + self.rows[0].percent.get_size().width + self.rows[0].score.get_size().width + 3 * GAP + PAD;
+        let fixed = BAR_WIDTH
+            + self.rows[0].percent.get_size().width
+            + self.rows[0].score.get_size().width
+            + 3 * GAP
+            + PAD;
         let available = (width - fixed).max(80);
         for (row, name) in self.rows.iter().zip(&content.names) {
             row.name.set_label(&fit(&row.name, name, available));

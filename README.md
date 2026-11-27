@@ -41,9 +41,14 @@ The desktop app is a separate download:
 | Platform | File |
 |---|---|
 | Windows (64-bit) | `sidfind-gui-<version>-x86_64-pc-windows-msvc.zip` |
+| Linux (64-bit Intel/AMD) | `sidfind-gui-<version>-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux (64-bit ARM) | `sidfind-gui-<version>-aarch64-unknown-linux-gnu.tar.gz` |
 
-For now the desktop app is only offered as a prebuilt download for Windows. On macOS and Linux you can build it
-yourself (see [Building](#building)); it works there too, but there are no prebuilt archives yet.
+For macOS there is no prebuilt desktop app yet; build it yourself (see [Building](#building)).
+
+On Linux the archive also contains `install.sh`. It is optional: run it from the unpacked folder to add SidFind
+to your application menu with its icon (no root needed). Run `./install.sh --uninstall` to remove the entry again.
+Without it, `sidfind-gui` still runs, but the file manager and menu show a generic icon.
 
 The binaries are not code-signed, so your OS may warn about them: on macOS run `xattr -d com.apple.quarantine sidfind`
 once if a browser-downloaded copy is blocked, and on Windows choose "More info" and then "Run anyway" in SmartScreen.

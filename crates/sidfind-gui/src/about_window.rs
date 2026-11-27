@@ -19,20 +19,44 @@ pub fn show(parent: &Frame) {
     let root = BoxSizer::builder(Orientation::Vertical).build();
 
     let logo = StaticBitmap::builder(&panel)
-        .with_bitmap(logo_bitmap(&panel, &logo_ink()).or_else(|| Bitmap::from_rgba(&[0, 0, 0, 0], 1, 1)))
+        .with_bitmap(
+            logo_bitmap(&panel, &logo_ink()).or_else(|| Bitmap::from_rgba(&[0, 0, 0, 0], 1, 1)),
+        )
         .build();
-    root.add(&logo, 0, SizerFlag::AlignCenterHorizontal | SizerFlag::Top, PAD);
-    let author = StaticText::builder(&panel).with_label("By Doc Snyder").build();
-    root.add(&author, 0, SizerFlag::AlignCenterHorizontal | SizerFlag::Top, GAP);
+    root.add(
+        &logo,
+        0,
+        SizerFlag::AlignCenterHorizontal | SizerFlag::Top,
+        PAD,
+    );
+    let author = StaticText::builder(&panel)
+        .with_label("By Doc Snyder")
+        .build();
+    root.add(
+        &author,
+        0,
+        SizerFlag::AlignCenterHorizontal | SizerFlag::Top,
+        GAP,
+    );
     root.add_spacer(2 * PAD);
     for line in [format!("Version {VERSION}"), format!("Build {BUILD}")] {
         let text = StaticText::builder(&panel).with_label(&line).build();
-        root.add(&text, 0, SizerFlag::AlignCenterHorizontal | SizerFlag::Top, GAP);
+        root.add(
+            &text,
+            0,
+            SizerFlag::AlignCenterHorizontal | SizerFlag::Top,
+            GAP,
+        );
     }
     root.add_stretch_spacer(1);
     let close = Button::builder(&panel).with_label("Close").build();
     grow(&close);
-    root.add(&close, 0, SizerFlag::AlignCenterHorizontal | SizerFlag::All, PAD);
+    root.add(
+        &close,
+        0,
+        SizerFlag::AlignCenterHorizontal | SizerFlag::All,
+        PAD,
+    );
 
     panel.set_sizer(root, true);
     let dialog_sizer = BoxSizer::builder(Orientation::Vertical).build();
