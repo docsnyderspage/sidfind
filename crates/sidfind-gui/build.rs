@@ -7,21 +7,23 @@ use embed_manifest::manifest::{ActiveCodePage, DpiAwareness, Setting, SupportedO
 use embed_manifest::{embed_manifest, new_manifest};
 use std::process::Command;
 
+/// Runs git and returns its trimmed output; None when git is missing or fails.
+fn git(args: &[&str]) -> Option<String> {
+    Command::new("git")
+        .args(args)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+}
+
 /// The short commit hash of HEAD, with `-dirty` when tracked files have uncommitted changes.
 /// `unknown` when git is not available (e.g. a source archive).
 fn git_hash() -> String {
-    let run = |args: &[&str]| {
-        Command::new("git")
-            .args(args)
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-    };
-    let Some(hash) = run(&["rev-parse", "--short", "HEAD"]) else {
+    let Some(hash) = git(&["rev-parse", "--short", "HEAD"]) else {
         return "unknown".to_string();
     };
-    let hash = String::from_utf8_lossy(&hash.stdout).trim().to_string();
-    let dirty = run(&["diff-index", "--quiet", "HEAD", "--"]).is_none();
+    let dirty = git(&["diff-index", "--quiet", "HEAD", "--"]).is_none();
     if dirty { format!("{hash}-dirty") } else { hash }
 }
 
@@ -31,6 +33,9 @@ fn main() {
     println!("cargo:rerun-if-changed=../../.git/HEAD");
     println!("cargo:rerun-if-changed=../../.git/refs/heads");
     println!("cargo:rustc-env=SIDFIND_GIT_HASH={}", git_hash());
+    // the date and time of the commit HEAD, in local time, e.g. "2026-11-27 21:43"
+    let committed = git(&["log", "-1", "--date=format-local:%Y-%m-%d %H:%M", "--format=%cd"]).unwrap_or_else(|| "unknown".to_string());
+    println!("cargo:rustc-env=SIDFIND_BUILD_TIME={committed}");
     println!("cargo:rerun-if-changed=../../assets/icons/sidfind.ico");
     // the target, not the host: this also holds when cross-compiling
     if !std::env::var("TARGET")

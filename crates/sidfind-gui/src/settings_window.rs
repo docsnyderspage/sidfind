@@ -56,7 +56,7 @@ pub fn show(parent: &Frame, prefs: &Rc<RefCell<Prefs>>) {
         &panel,
         "HVSC folder (required)",
         "",
-        Some(("Download the HVSC collection", HVSC_DOWNLOAD_URL)),
+        None,
         "Clear HVSC folder",
     );
     let (index, index_cell) = PathSetting::new(
@@ -117,8 +117,8 @@ pub fn show(parent: &Frame, prefs: &Rc<RefCell<Prefs>>) {
     root.add_stretch_spacer(1);
     let close = Button::builder(&panel).with_label("Close").build();
     grow(&close);
-    // the project page: opens in the default browser (the URL comes from Cargo.toml)
-    let link = hyperlink(&panel, "SidFind on GitHub", env!("CARGO_PKG_REPOSITORY"));
+    // the HVSC collection page: opens in the default browser
+    let link = hyperlink(&panel, "Download the HVSC collection", HVSC_DOWNLOAD_URL);
     let close_row = BoxSizer::builder(Orientation::Horizontal).build();
     close_row.add(&link, 0, SizerFlag::AlignCenterVertical, 0);
     close_row.add_stretch_spacer(1);

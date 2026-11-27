@@ -4,12 +4,14 @@
 use wxdragon::prelude::*;
 
 use crate::ui::{logo_bitmap, logo_ink};
-use crate::widgets::{GAP, PAD, grow};
+use crate::widgets::{GAP, PAD, grow, hyperlink};
 
 /// The release version, from Cargo.toml.
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// The git commit the build was made from (see build.rs).
 const BUILD: &str = env!("SIDFIND_GIT_HASH");
+/// The date and time of the commit the build was made from (see build.rs).
+const BUILT: &str = env!("SIDFIND_BUILD_TIME");
 const WIDTH: i32 = 320;
 
 /// Shows the About window and returns when it is closed.
@@ -39,7 +41,7 @@ pub fn show(parent: &Frame) {
         GAP,
     );
     root.add_spacer(2 * PAD);
-    for line in [format!("Version {VERSION}"), format!("Build {BUILD}")] {
+    for line in [format!("Version {VERSION}"), format!("Build {BUILT} ({BUILD})")] {
         let text = StaticText::builder(&panel).with_label(&line).build();
         root.add(
             &text,
@@ -48,6 +50,15 @@ pub fn show(parent: &Frame) {
             GAP,
         );
     }
+    root.add_spacer(PAD);
+    // the project page: opens in the default browser (the URL comes from Cargo.toml)
+    let link = hyperlink(&panel, "SidFind on GitHub", env!("CARGO_PKG_REPOSITORY"));
+    root.add(
+        &link,
+        0,
+        SizerFlag::AlignCenterHorizontal | SizerFlag::Top,
+        GAP,
+    );
     root.add_stretch_spacer(1);
     let close = Button::builder(&panel).with_label("Close").build();
     grow(&close);

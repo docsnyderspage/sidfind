@@ -189,6 +189,7 @@ fn run(opts: &Options) -> Result<(), String> {
     }
 
     let settings = ScanSettings { window: opts.window, top: opts.top, min_score: opts.min_score, cycles: opts.cycles };
+    println!("SIDFind v{}", env!("CARGO_PKG_VERSION"));
     for found in identify(&opts.prgs, &opts.source()?, &settings, &ctl)? {
         report(&found);
     }
@@ -196,7 +197,7 @@ fn run(opts: &Options) -> Result<(), String> {
 }
 
 fn report(found: &Identification) {
-    println!("{}", found.path.display());
+    println!("Scanning file {}", found.path.display());
     if found.matches.is_empty() {
         println!("   no match ({} distinct windows checked; {})", found.windows, found.emulation);
         println!("   the tune may be packed, relocated or not in HVSC (see --min-score, --window)");
